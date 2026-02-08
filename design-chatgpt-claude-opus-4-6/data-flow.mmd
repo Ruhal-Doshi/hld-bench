@@ -1,0 +1,60 @@
+sequenceDiagram
+    participant Client as Browser Client
+    participant CDN as CloudFront CDN
+    participant GW as API Gateway (Kong)
+    participant Auth as Auth Service
+    participant Conv as Conversation Service
+    participant SG as Streaming Gateway
+    participant LLM as LLM Orchestrator
+    participant Provider as LLM Provider (OpenAI/Anthropic)
+    participant DB as PostgreSQL
+    participant Cache as Redis Cache
+    participant Kafka as Kafka Event Bus
+    participant Billing as Billing Service
+    participant Search as Elasticsearch
+    participant S3 as S3 Storage
+    participant CH as ClickHouse
+
+    Note over Client,CDN: Static assets served from CDN
+
+    Client->>GW: POST /auth/login (credentials)
+    GW->>Auth: Validate credentials
+    Auth->>DB: Query user record
+    Auth-->>Client: JWT + Refresh Token
+
+    Client->>GW: POST /conversations (new chat)
+    GW->>GW: Validate JWT, check rate limit
+    GW->>Conv: Create conversation
+    Conv->>DB: INSERT conversation record
+    Conv->>Cache: Cache conversation metadata
+    Conv-->>Client: conversation_id
+
+    Client->>GW: POST /conversations/{id}/messages (user message)
+    GW->>Conv: Append user message
+    Conv->>DB: INSERT message (user role)
+    Conv->>Cache: Update context window cache
+    Conv->>Kafka: Publish message_created event
+    Conv-->>Client: message_id + stream_url
+
+    Client->>SG: SSE Connect /stream/{message_id}
+    SG->>LLM: Request completion (conversation context)
+    LLM->>Cache: Fetch conversation context
+    LLM->>Provider: Stream completion request
+    Provider-->>LLM: Token stream (chunk by chunk)
+    LLM-->>SG: Forward tokens
+    SG-->>Client: SSE data: {token} events
+    LLM->>DB: INSERT assistant message (complete)
+    LLM->>Kafka: Publish tokens_consumed event
+
+    Kafka->>Billing: Consume tokens_consumed
+    Billing->>DB: Update usage records
+    Billing->>CH: Insert cost event for analytics
+
+    Kafka->>Search: Consume message_created
+    Search->>Search: Index message in Elasticsearch
+
+    Note over Client,S3: File Upload Flow
+    Client->>GW: POST /files/upload (multipart)
+    GW->>S3: Store file with presigned URL
+    GW->>Conv: Associate file with message
+    Conv->>Kafka: Publish file_uploaded event

@@ -1,0 +1,280 @@
+{
+  "title": "High-Level Design: ChatGPT-like Multi-turn Conversational Platform",
+  "overview": "A globally distributed, real-time web platform that enables multi-turn conversations with configurable LLM backends, streaming responses token-by-token, durable conversation history, multimodal inputs, per-user quotas and billing, and admin monitoring. The design uses managed cloud components where appropriate (AWS examples used for concreteness) and is built for 20M DAU and ~500M messages/day — with multi-region deployment, autoscaling WebSocket clusters, strong consistency for conversation data, semantic search, and resilient LLM backend routing with automatic failover and cost accounting.",
+  "requirements": {
+    "functional": [
+      "User authentication, registration, password reset and session management",
+      "Create and continue multi-turn conversation threads with context retention",
+      "Real-time streaming of LLM responses token-by-token to clients",
+      "Durable and immediately consistent conversation history (read/write immediately consistent)",
+      "Search and organize conversation history (text + semantic search)",
+      "Support multiple LLM backends and per-conversation model selection",
+      "Rate limiting and per-tier usage quotas; block/soft-limit enforcement",
+      "Markdown rendering with safe sanitization (code blocks, tables, etc.)",
+      "File upload and multimodal input handling (images, documents) with safe storage and processing",
+      "Share conversations via public links (read-only) with optional expiry",
+      "Admin dashboard for usage, costs, quota management, and system health",
+      "Per-request cost tracking for accurate billing"
+    ],
+    "nonFunctional": [
+      "Scale to 20M daily active users and 500M messages/day",
+      "Support at least 100K concurrent WebSocket connections per region",
+      "Start streaming first token within 500ms of request",
+      "Conversation history must be durable and immediately consistent",
+      "High availability and graceful degradation on LLM backend failures with automatic failover",
+      "Low latency (P95 request response times within reasonable bounds) and high throughput",
+      "Secure file handling, sanitization, and access controls",
+      "Observability: request tracing, per-request cost telemetry, metrics and logs",
+      "Regulatory considerations: data residency and GDPR-friendly features (export/delete)"
+    ]
+  },
+  "components": [
+    {
+      "name": "Edge / CDN",
+      "responsibility": "Global caching, TLS termination, hosting static assets, and routing to nearest API region. Protect against DDoS and serve prerendered content.",
+      "techChoice": "AWS CloudFront + AWS WAF (or Cloudflare) for global CDN & edge security",
+      "justification": "Low latency global content delivery and edge protections. CloudFront integrates with regional ALBs and AWS API Gateway; WAF provides DDoS/IPS rules."
+    },
+    {
+      "name": "API Gateway (REST & WebSocket)",
+      "responsibility": "Ingress point for HTTP(S) REST APIs and managed WebSocket connections, authentication/authorization integration, metrics, and throttling.",
+      "techChoice": "AWS API Gateway (HTTP/APIGW v2 for WebSocket) or AWS Application Load Balancer + NLB for WebSocket if custom stack preferred",
+      "justification": "Managed API Gateway handles large scale WebSocket connections reliably and integrates with Lambda and VPC targets. Reduces operational burden to meet 100K+ connections per region."
+    },
+    {
+      "name": "Auth Service / Identity",
+      "responsibility": "User authentication (email/password, OAuth), session issuance, token lifecycle, MFA, and account management.",
+      "techChoice": "Auth0 or Amazon Cognito (or self-hosted Keycloak for more control)",
+      "justification": "Managed identity reduces time to market; Cognito/Auth0 handle scaling, OIDC/OAuth flows, social login, and integrate with API Gateway and IAM. Can fallback to Keycloak if self-hosting required for compliance."
+    },
+    {
+      "name": "Frontend (Web & Mobile clients)",
+      "responsibility": "UI for conversations, streaming UI, markdown rendering/sanitization, file uploads, sharing links, offline behaviors, and websocket clients.",
+      "techChoice": "React + Next.js for Web (SSR), React Native for mobile; use WebSocket & SSE clients for streaming. Use remark/rehype for markdown rendering and DOMPurify for sanitization.",
+      "justification": "Next.js gives performant SSR/CSR mix and edge support; well-supported libraries for markdown and security."
+    },
+    {
+      "name": "Connection Manager / WebSocket Workers",
+      "responsibility": "Maintain WebSocket connections, route tokens to clients, enforce per-connection rate limits, maintain ephemeral state, and connect to LLM streaming output.",
+      "techChoice": "Kubernetes (EKS) running horizontally scaled WebSocket worker pods behind API Gateway or ALB, using Envoy/ingress for routing. Use Redis for presence/connection metadata.",
+      "justification": "Kubernetes provides autoscaling and lifecycle control. Breaking stream work into worker pods allows streaming token-by-token with low-latency writes to sockets; Redis stores connection mapping for routing in multi-pod deployments."
+    },
+    {
+      "name": "Conversation Service (API)",
+      "responsibility": "Handles conversation CRUD, multi-turn context assembly, versioning, bookmarks, shareable link creation, and immediate persistent writes.",
+      "techChoice": "Stateless microservice in Kubernetes (gRPC/HTTP) with connection to Aurora PostgreSQL (Primary writer) and a caching layer (Redis).",
+      "justification": "Stateless services scale easily. Aurora PostgreSQL provides strong consistency and supports high write throughput with multi-AZ. Redis accelerates hot path reads and rate-limit checks."
+    },
+    {
+      "name": "Message Ingest & Streaming Orchestrator (LLM Router)",
+      "responsibility": "Orchestrates sending prompts to selected LLM backend(s), streams tokens back to Connection Manager, calculates per-request cost, applies circuit-breakers and failover to alternate models/backends, and logs telemetry.",
+      "techChoice": "Stateless microservice (Kubernetes) using gRPC to LLM backends; feature-rich router capability using Hystrix-like circuit breaker libraries and per-model adapters. Persist logs & events to Kafka (MSK) for downstream processing.",
+      "justification": "Centralized routing simplifies failover, cost accounting, and policy enforcement. gRPC yields low-latency backend calls; Kafka provides durable eventing for billing and analytics."
+    },
+    {
+      "name": "LLM Backends",
+      "responsibility": "Provide model inference and token streaming. Could be managed external APIs (OpenAI, Anthropic) and/or internal GPU clusters (private models).",
+      "techChoice": "Hybrid: External providers (OpenAI/Anthropic) + Internal GPU clusters orchestrated by Kubernetes + Triton / NVIDIA TensorRT / Ray Serve for model serving. Use model proxies that expose gRPC or HTTP streaming.",
+      "justification": "Hybrid provides capacity and cost controls: external for burst/spiky loads and internal for steady-state/private models. Triton/Ray Serve are production-ready for large model serving with streaming support."
+    },
+    {
+      "name": "Cache & Rate-Limit Store",
+      "responsibility": "Fast token-bucket rate limits, session cache, short-lived conversation caches for hot reads, and presence store.",
+      "techChoice": "Redis (Amazon ElastiCache in clustered mode with clustering-enabled Redis or Redis Enterprise)",
+      "justification": "Redis supports very low-latency operations, atomic counters, Lua scripting for rate-limiting logic, and clustering for scale."
+    },
+    {
+      "name": "Durable Storage (Conversations / Metadata / Billing)",
+      "responsibility": "Immediate-consistency primary store for conversations, messages, user metadata, billing records, and access controls.",
+      "techChoice": "Amazon Aurora PostgreSQL (clustered, multi-AZ, read-replicas) with partitioning/sharding by tenant or hashed conversation id.",
+      "justification": "Relational strong consistency and transactions for immediate-consistency requirement; Aurora scales reads and provides high durability and automated backups."
+    },
+    {
+      "name": "Object Store (Files & Attachments)",
+      "responsibility": "Store uploaded files (images, docs) and serve them to model pipelines and clients via presigned URLs; lifecycle & virus-scan results.",
+      "techChoice": "Amazon S3 with S3 Object Lambda hooks; presigned uploads; Lambda for scanning via ClamAV or third-party virus scanning",
+      "justification": "S3 is durable, scalable, and cost-effective; presigned uploads offload bandwidth; Lambda-based scanning pipeline can be used asynchronously."
+    },
+    {
+      "name": "Search & Embeddings",
+      "responsibility": "Text and semantic search across conversation history and attachments; embedding generation and vector search.",
+      "techChoice": "Hybrid: OpenSearch (for keyword/structured search) + Vector DB (Pinecone, Milvus, or Amazon OpenSearch vector plugin) for embeddings. Use a managed embedding service or produce embeddings via dedicated model instances and store vectors in vector DB.",
+      "justification": "OpenSearch handles traditional search and filters; vector DB supports semantic similarity at scale. Separating concerns lets us scale search independently."
+    },
+    {
+      "name": "Event Bus / Streaming & Analytics",
+      "responsibility": "Durable eventing for audit logs, billing events, metrics, and asynchronous jobs (indexing, notifications, cost aggregation).",
+      "techChoice": "Apache Kafka (Amazon MSK) for high-throughput durable logs; Kafka Connect to data warehouse (Snowflake/BigQuery) and stream processors (Flink/Kafka Streams).",
+      "justification": "Kafka scales well for hundreds of thousands of events/sec and supports exactly-once processing patterns enabling accurate billing and analytics."
+    },
+    {
+      "name": "Billing & Cost Accounting",
+      "responsibility": "Accurate per-request cost tracking, aggregation to user billing, tier enforcement, and exports to billing system.",
+      "techChoice": "Service that consumes Kafka billing events, applies per-model cost rates, stores detailed line-items in PostgreSQL and aggregates in OLAP (BigQuery/Snowflake) for reports. Use serverless ETL for daily aggregation.",
+      "justification": "Event-driven accounting keeps near-real-time cost tracking for each request; OLAP enables fast analytics and admin dashboards."
+    },
+    {
+      "name": "Admin Dashboard & Observability",
+      "responsibility": "System metrics, alerts, per-user/tier usage, cost dashboards, model-health, and structured logs.",
+      "techChoice": "Prometheus + Grafana for metrics; Jaeger for distributed traces; ELK/OpenSearch for logs; Grafana dashboards with role-based access. Admin frontend built on React + RBAC.",
+      "justification": "Standard observability stack with tracing allows operators to debug and monitor the system and analyze cost/usage."
+    },
+    {
+      "name": "Security & Compliance",
+      "responsibility": "Access controls, secret management, key rotation, audit logs, data deletion/export endpoints, encryption at rest/in transit, and DLP for file scanning.",
+      "techChoice": "AWS KMS for secrets, IAM for infra access control, Vault (HashiCorp) for application secrets if self-hosting; S3 encryption and TLS everywhere.",
+      "justification": "Managed key stores and RBAC minimize operational overhead while meeting compliance."
+    }
+  ],
+  "dataFlow": "sequenceDiagram\n    participant U as \"User (Browser/App)\"\n    participant CDN as \"CDN / Edge\"\n    participant API as \"API Gateway (REST / WebSocket)\"\n    participant Auth as \"Auth Service\"\n    participant WS as \"WebSocket Worker\"\n    participant Conv as \"Conversation Service\"\n    participant Router as \"LLM Router\"\n    participant LLM as \"LLM Backends (internal/external)\"\n    participant DB as \"Aurora PostgreSQL\"\n    participant Redis as \"Redis (rate-limit, session)\"\n    participant Kafka as \"Kafka (MSK)\"\n\n    U->>CDN: HTTPS request / WS connect\n    CDN->>API: Route to nearest region\n    API->>Auth: Validate token/session (if REST) or handshake\n    Auth-->>API: Auth OK\n    API->>WS: Route WebSocket connection\n    WS->>Redis: Register connection/presence\n    U->>API: POST /conversations/{id}/messages (or WS send)\n    API->>Conv: Validate + persist message\n    Conv->>DB: Insert message (immediate commit)\n    DB-->>Conv: Commit ack\n    Conv->>Kafka: Emit \"message.created\" event\n    Conv->>Router: Request streaming inference (include conversation context)\n    Router->>LLM: Send prompt (gRPC/HTTP stream)\n    LLM->>Router: Stream tokens (token-by-token)\n    Router->>Kafka: Emit \"inference.usage\" events (tokens, model, timestamps)\n    Router->>WS: Stream tokens to client\n    WS->>U: Token frames (client renders live)\n    Router->>Billing Service: Send cost telemetry (sync/async)\n    Kafka->>Search Service: Consume events to index text & embeddings\n    Kafka->>Billing/Analytics: Consume events for aggregation\n    Note over U,DB: Conversation stored immediately and available for reads/search\n",
+  "architectureDiagram": "flowchart TD\n    A[\"User (Web/Mobile)\"] --> B[\"CDN / Edge (CloudFront / WAF)\"]\n    B --> C[\"API Gateway (HTTP + WebSocket)\"]\n    C --> D[\"Auth Service (Cognito/Auth0)\"]\n    C --> E[\"WebSocket Workers (EKS) \"]\n    C --> F[\"Conversation API (EKS)\"]\n    E --> G[\"Redis (ElastiCache) - presence, rate-limit\"]\n    F --> H[\"Aurora PostgreSQL (Conversations/Metadata)\"]\n    F --> I[\"S3 (Files & Attachments)\"]\n    F --> J[\"Kafka (MSK) - events\"]\n    J --> K[\"Search Index (OpenSearch) & Vector DB (Pinecone/Milvus)\"]\n    J --> L[\"Billing Service + OLAP (Snowflake/BigQuery)\"]\n    F --> M[\"LLM Router (EKS)\"]\n    M --> N[\"LLM Backends: External (OpenAI) & Internal GPU Cluster (Triton/Ray)\"]\n    M --> J\n    E --> C\n    H -->|replicas| H2[\"Aurora Read Replicas (for reads)\"]\n    subgraph Observability\n      O1[\"Prometheus + Grafana\"]\n      O2[\"Jaeger Tracing\"]\n      O3[\"OpenSearch / ELK Logs\"]\n    end\n    J --> O1\n    J --> L\n    M --> O2\n    C --> O3\n",
+  "dataStorage": [
+    {
+      "store": "Amazon Aurora PostgreSQL",
+      "type": "sql",
+      "justification": "Provides immediate consistency, transactions, and durability for conversation history and billing line-items. Aurora supports multi-AZ, read-replicas, partitioning/sharding, and scales to high throughput with proper schema design."
+    },
+    {
+      "store": "Redis (ElastiCache Clustered)",
+      "type": "cache",
+      "justification": "Low-latency data for rate-limiting, session/presence mapping, token-bucket counters, and ephemeral caching of recent conversation context for fast reads."
+    },
+    {
+      "store": "Amazon S3",
+      "type": "blob",
+      "justification": "Durable, cost-efficient object storage for user uploaded files and model artifacts. Supports presigned uploads and lifecycle policies; integrates with object-lambda for scanning/transformations."
+    },
+    {
+      "store": "Apache Kafka (Amazon MSK)",
+      "type": "queue",
+      "justification": "Durable, high-throughput event stream for message events, billing events, and indexing streams. Enables decoupled asynchronous processing (search indexing, billing aggregation, analytics)."
+    },
+    {
+      "store": "OpenSearch (Elastic) + Vector DB (Pinecone or Milvus)",
+      "type": "search",
+      "justification": "OpenSearch for keyword/structured search and filters; vector DB for semantic similarity search on embeddings. Scales independently and supports fast retrieval of relevant conversation segments."
+    },
+    {
+      "store": "OLAP (BigQuery or Snowflake)",
+      "type": "nosql",
+      "justification": "For cost/billing analytics and historical reporting at scale. Stores aggregated billing/usage records and enables fast analytics for admin dashboards and finance exports."
+    }
+  ],
+  "apiDesign": [
+    {
+      "endpoint": "/api/v1/auth/login",
+      "method": "POST",
+      "description": "Authenticate user (email/password or OAuth token exchange). Returns access token and refresh token. Initiates session and rate-limit metadata."
+    },
+    {
+      "endpoint": "/api/v1/conversations",
+      "method": "GET",
+      "description": "List user conversations with pagination, sorting, and filters (by tag, model, shared). Uses read-replica; consistent with write-through caching invalidation."
+    },
+    {
+      "endpoint": "/api/v1/conversations",
+      "method": "POST",
+      "description": "Create a new conversation; specify model, system prompt, privacy/sharing options, and optional attachments."
+    },
+    {
+      "endpoint": "/api/v1/conversations/{conversationId}/messages",
+      "method": "POST",
+      "description": "Send a new user message to a conversation. Persists message, triggers inference via LLM Router, and returns inference-id. Supports multimodal references (file IDs)."
+    },
+    {
+      "endpoint": "/api/v1/conversations/{conversationId}/stream",
+      "method": "WS",
+      "description": "WebSocket endpoint for real-time streaming of LLM responses (token-by-token) and message events. Supports client acknowledgements, reconnect/resume semantics, and server pings."
+    },
+    {
+      "endpoint": "/api/v1/files",
+      "method": "POST",
+      "description": "Request presigned URL for upload or upload metadata. After upload, file is scanned asynchronously; returns file ID for model input."
+    },
+    {
+      "endpoint": "/api/v1/models",
+      "method": "GET",
+      "description": "List available models with capabilities, estimated cost/token, latency SLAs, and fallback rules."
+    },
+    {
+      "endpoint": "/api/v1/conversations/{conversationId}/share",
+      "method": "POST",
+      "description": "Create a public, shareable link (read-only) with optional expiry and password protect settings."
+    },
+    {
+      "endpoint": "/api/v1/admin/metrics",
+      "method": "GET",
+      "description": "Admin-only metrics endpoint aggregated from Prometheus/OLAP for usage, costs, model health, and alerts. Requires admin RBAC."
+    }
+  ],
+  "scalabilityStrategy": "Multi-region deployment with region-local clusters (API Gateway + EKS + Aurora in each region or read-only replicas cross-region depending on data residency). Horizontal scaling: stateless frontends and LLM Router scale via Kubernetes HPA/KEDA based on CPU/RPS/queue length. WebSocket workers scale horizontally; use managed API Gateway or ALB to handle connection scaling. Redis is scaled as a clustered ElastiCache with sharding; Aurora can be scaled by sharding conversations by tenant or hashing conversationId to different writer clusters for write throughput. Use Kafka (MSK) partitions scaled by throughput and consumer groups for parallel processing. Use autoscaling GPU pools for internal model serving (using Karpenter/Cluster Autoscaler) and spot instances to reduce cost for non-critical capacity. Employ edge caching (CloudFront) for static assets and read-heavy metadata. For search and embeddings, scale vector DB clusters independently. For global throughput, employ traffic steering to nearest region with failover and active-passive or active-active DB strategy where legal/regulatory constraints permit.",
+  "tradeoffs": [
+    {
+      "decision": "Use Aurora PostgreSQL (SQL) as primary conversation store versus a NoSQL store",
+      "pros": [
+        "Strong consistency and transactional integrity meeting immediate-consistency requirement",
+        "Familiar SQL tooling for analytics and billing joins",
+        "ACID semantics make concurrency around multi-turn context safer"
+      ],
+      "cons": [
+        "Higher cost at scale and more complex sharding strategy required for very high write throughput",
+        "Scaling writes requires sharding/partitioning; operational complexity compared to unlimited-scaled NoSQL"
+      ]
+    },
+    {
+      "decision": "Managed API Gateway + managed WebSocket vs self-hosted WebSocket tier",
+      "pros": [
+        "Reduces operational burden and more predictable scalability to meet 100K+ connections per region",
+        "Integrated auth/metrics and DDoS protections"
+      ],
+      "cons": [
+        "Potentially higher cost and less low-level customization than self-hosted approach",
+        "Proprietary limits and vendor lock-in"
+      ]
+    },
+    {
+      "decision": "Hybrid LLM Backends (external providers + internal GPU clusters)",
+      "pros": [
+        "Flexibility: use cheaper internal models for baseline load and external providers for burst or advanced models",
+        "Avoids total dependency on third-party providers and gives control over privacy/compliance"
+      ],
+      "cons": [
+        "Complexity in routing, capacity planning, and maintaining model infra",
+        "Potentially higher ops cost to run GPU clusters"
+      ]
+    },
+    {
+      "decision": "Kafka (MSK) for events vs serverless queues (Kinesis/Lambda)",
+      "pros": [
+        "Kafka provides high throughput, ordering guarantees, and complex stream processing needed for billing accuracy",
+        "Good for exactly-once or at-least-once semantics required by billing and audit trails"
+      ],
+      "cons": [
+        "Operational complexity and higher management overhead vs serverless alternatives",
+        "Higher cost at small scale; more moving parts"
+      ]
+    },
+    {
+      "decision": "Use Redis for rate-limiting and session store",
+      "pros": [
+        "Extremely low latency and atomic operations (Lua) for precise rate-limiting",
+        "Widely adopted pattern and straightforward to implement token-bucket quotas"
+      ],
+      "cons": [
+        "Single point of failure risk if not configured in clustered/high-availability mode",
+        "Operational overhead to scale and tune eviction/persistence"
+      ]
+    },
+    {
+      "decision": "Vector DB (Pinecone/Milvus) for semantic search vs using OpenSearch alone",
+      "pros": [
+        "Vector DB optimized for nearest-neighbor semantic search at scale and supports high-dimensional vectors",
+        "Better latency and scalability for similarity queries"
+      ],
+      "cons": [
+        "Adds another datastore to maintain and sync embeddings (operational overhead)",
+        "Extra cost; integration complexity with indexing pipelines"
+      ]
+    }
+  ]
+}

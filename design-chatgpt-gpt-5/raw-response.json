@@ -1,0 +1,317 @@
+{
+  "title": "ChatGPT-like Multimodal Conversational Platform (Global, Real-time, Multi-LLM)",
+  "overview": "A globally distributed, real-time conversational AI platform supporting multi-turn chat with multiple LLM backends, multimodal inputs, and rich history management. The system is built for 20M DAUs and 500M messages/day with sub-500ms time-to-first-token via a high-performance WebSocket gateway, an LLM routing layer with fast failover, and region-affine, strongly consistent storage for conversation history. Analytics, cost tracking, and admin observability are first-class through an events pipeline into ClickHouse and Prometheus/Grafana. The core data plane is stateless, horizontally scalable on Kubernetes, and tolerant of provider or regional failures.",
+  "requirements": {
+    "functional": [
+      "User authentication (OAuth/social SSO) and session management",
+      "Create/read/update/delete multi-turn conversations and messages with context retention",
+      "Real-time streaming of assistant responses over WebSocket (token-by-token)",
+      "Conversation history: search, star, tag, foldering, archive, delete",
+      "Multiple model selection across providers and in-house inference",
+      "Rate limiting and quota enforcement by user/tier and per-model",
+      "File upload for images/documents with virus scan, OCR/text extraction, and multimodal prompt support",
+      "Share conversations via public links with configurable visibility",
+      "Admin dashboard: model/provider health, usage, cost, errors, rate limits/quota states",
+      "Cost tracking per request for accurate billing and cost attribution"
+    ],
+    "nonFunctional": [
+      "Time-to-first-token (TTFT) < 500ms p95",
+      "Support ≥100K concurrent WebSocket connections per region",
+      "Immediate consistency for conversation/message persistence",
+      "Regional fault tolerance and LLM provider failover with graceful degradation",
+      "Horizontal scalability to 500M messages/day (60k msgs/sec peak)",
+      "Data durability (multi-AZ), point-in-time recovery, backups",
+      "Security: WAF, DDoS protection, encryption in transit/at rest, least-privilege IAM",
+      "Observability: distributed tracing, metrics, logs, audit trails",
+      "Privacy and compliance readiness (GDPR/CCPA data subject controls)",
+      "Cost efficiency: autoscaling compute/GPU, cost-aware routing, storage tiering"
+    ]
+  },
+  "components": [
+    {
+      "name": "Client Web App",
+      "responsibility": "SPA for chat UI, Markdown rendering, code highlighting, WebSocket streaming, file uploads, search, and sharing",
+      "techChoice": "Next.js + React, TypeScript, WebSocket, highlight.js, Markdown-it",
+      "justification": "Mature ecosystem, SSR for SEO (shared links), excellent dev productivity and performance"
+    },
+    {
+      "name": "Edge CDN/WAF & Global LB",
+      "responsibility": "TLS termination, caching static assets, DDoS/WAF, geo-steering to nearest healthy region",
+      "techChoice": "Cloudflare CDN + Cloudflare Load Balancer + Bot Management",
+      "justification": "Global footprint, anycast, robust WAF and health-based geo-routing to meet latency and availability targets"
+    },
+    {
+      "name": "API & WebSocket Gateway",
+      "responsibility": "Single entry for REST and WebSocket; authZ/authN checks, rate limiting, session validation, request fan-out to internal services; streams tokens to client",
+      "techChoice": "Go microservice on Kubernetes with NGINX Ingress (ALB) and HTTP/2; gorilla/websocket; gRPC to internal services",
+      "justification": "Go delivers low-latency IO and high concurrency; stable WS handling; NGINX Ingress + ALB scale well"
+    },
+    {
+      "name": "Auth Service",
+      "responsibility": "User identity, OAuth/social login, JWT issuance, refresh tokens, RBAC/roles (user/admin)",
+      "techChoice": "Auth0 (OIDC) + JWT (RS256)",
+      "justification": "Fast to integrate, enterprise SSO, adaptive MFA; offloads identity risk; standards-compliant OIDC"
+    },
+    {
+      "name": "Rate Limit & Quota Service",
+      "responsibility": "Enforces per-user/tier rate limits (sliding window) and quotas; provides near-real-time counters",
+      "techChoice": "Envoy Global Rate Limit Service + Redis Cluster; Lua in NGINX for shadow checks",
+      "justification": "Envoy RLS is battle-tested; Redis offers sub-ms counters and atomicity with Lua scripts"
+    },
+    {
+      "name": "Session/Cache Store",
+      "responsibility": "JWT blacklist, session metadata, ephemeral streaming buffers, recent context window cache",
+      "techChoice": "Redis Cluster (6.x) with Redis Streams for ephemeral events",
+      "justification": "In-memory speed, high availability via clustering and replication"
+    },
+    {
+      "name": "Conversation Service",
+      "responsibility": "CRUD for conversations/messages, context building, sharing ACLs, foldering/tags; transactional writes",
+      "techChoice": "PostgreSQL (Citus) multi-tenant sharded by user_id; Go service using pgx",
+      "justification": "Immediate consistency and SQL semantics; Citus scales horizontally and keeps p95 low with partitioning"
+    },
+    {
+      "name": "Search/Indexing Service",
+      "responsibility": "Full-text search over titles/messages; semantic search via embeddings; indexing pipeline",
+      "techChoice": "OpenSearch (multi-az) + k-NN plugin; background workers (Go) for indexing",
+      "justification": "Scalable search with near real-time indexing; k-NN for semantic search without extra vector DB"
+    },
+    {
+      "name": "LLM Router",
+      "responsibility": "Model catalog, routing to providers/in-house; health checks, circuit breakers, retries, cost-aware selection; streaming token multiplexing",
+      "techChoice": "Go service with gobreaker, HTTP/2 keep-alive pools; provider SDKs; configuration via Consul/etcd",
+      "justification": "Low-latency, robust control plane with per-provider health and dynamic routing rules"
+    },
+    {
+      "name": "Provider Connectors",
+      "responsibility": "Integrations to external LLMs and embeddings",
+      "techChoice": "Connectors for \"OpenAI/Anthropic/Azure OpenAI/Google Vertex\"; retries with exponential backoff; streaming adapters",
+      "justification": "Diversity reduces provider risk and enables cost/performance optimization"
+    },
+    {
+      "name": "In-house Inference Cluster",
+      "responsibility": "Self-hosted models (vLLM) for failover and cost control; embeddings server",
+      "techChoice": "vLLM on Kubernetes GPU nodes (NVIDIA A10/A100), Triton for embeddings; Istio for mTLS",
+      "justification": "High throughput, streaming-friendly; cost-efficient for baseline models and embeddings"
+    },
+    {
+      "name": "File Ingestion Service",
+      "responsibility": "Pre-signed uploads, virus scanning, OCR/text extraction, chunking; links assets to messages",
+      "techChoice": "Amazon S3 + S3 Object Lambda (virus scan with ClamAV) + AWS Textract + Apache Tika; Step Functions for orchestration",
+      "justification": "Serverless pipeline scales elastically; S3 durability and cost efficiency for blobs"
+    },
+    {
+      "name": "Cost & Billing Service",
+      "responsibility": "Compute per-request cost (provider rates, tokens, GPU time), store usage, expose invoices and quotas",
+      "techChoice": "Kafka consumers (Go) -> ClickHouse for analytics; Postgres for authoritative balances",
+      "justification": "ClickHouse excels at high-ingest analytics; Postgres for transactional balances and limits"
+    },
+    {
+      "name": "Event Bus",
+      "responsibility": "Asynchronous events: usage, costs, audit logs, indexing triggers",
+      "techChoice": "Apache Kafka (AWS MSK)",
+      "justification": "High-throughput, durable event streaming; ecosystem support"
+    },
+    {
+      "name": "Analytics & Monitoring",
+      "responsibility": "Dashboards, alerts, traces, logs",
+      "techChoice": "Prometheus + Grafana; OpenTelemetry + Jaeger; Loki for logs; CloudWatch for infra",
+      "justification": "Proven OSS stack, vendor-neutral instrumentation"
+    },
+    {
+      "name": "Admin Dashboard",
+      "responsibility": "Operational UI: usage, costs, errors, provider health, throttles; model catalog management",
+      "techChoice": "Next.js + RBAC; reads from ClickHouse/Prometheus/Postgres",
+      "justification": "Unified operational control plane with low-latency analytics queries"
+    },
+    {
+      "name": "CDN Assets & Static Hosting",
+      "responsibility": "Serve static JS/CSS/images",
+      "techChoice": "Cloudflare + S3 static site hosting",
+      "justification": "Global low-latency delivery for assets"
+    }
+  ],
+  "dataFlow": "sequenceDiagram\n    participant U as User Browser\n    participant CF as Edge (Cloudflare)\n    participant GW as API/WS Gateway\n    participant RL as Rate Limit Service\n    participant CS as Conversation Service\n    participant LR as LLM Router\n    participant PV as Provider\n    participant EV as Kafka\n    participant CH as ClickHouse\n    participant OS as OpenSearch\n\n    U->>CF: Connect WebSocket /v1/ws (JWT)\n    CF->>GW: Forward WS (geo-routed)\n    GW->>RL: Check rate limit/quota (user, model)\n    RL-->>GW: Allow with remaining tokens\n    U->>GW: Send user message (text + file refs)\n    GW->>CS: Persist user message (txn)\n    CS-->>GW: Ack message id (immediately consistent)\n    GW->>LR: Start completion (model, prompt, context)\n    LR->>PV: Provider streaming request (HTTP/2)\n    PV-->>LR: Stream tokens\n    LR-->>GW: Stream tokens (backpressure-aware)\n    GW-->>U: Stream tokens to client (TTFT < 500ms)\n    LR->>EV: Emit usage_start (user, model, est context)\n    PV-->>LR: Stream completed (usage: prompt/completion tokens)\n    LR->>GW: Done signal with metadata\n    GW->>CS: Finalize assistant message (content, stats)\n    GW->>EV: Emit usage_final (tokens, latency, provider, cost)\n    EV->>CH: Sink events for analytics/cost\n    EV->>OS: Trigger indexing (async)\n    Note over CS,OS: Indexing is eventually consistent (search), DB is immediately consistent",
+  "architectureDiagram": "flowchart TD\n    subgraph Edge\n      CF[\"Cloudflare (CDN/WAF/Geo LB)\"]\n    end\n\n    subgraph Region A (Active-Active)\n      ALB[\"AWS ALB (Ingress)\"]\n      GW[\"API/WS Gateway (Go, Kubernetes)\"]\n      RLS[\"Envoy Rate Limit Service\"]\n      REDIS[\"Redis Cluster (Sessions/Rate/Cache)\"]\n      AUTH[\"Auth0 (OIDC)\"]\n      CONV[\"Conversation Service (Go)\"]\n      PG[\"PostgreSQL Citus (Messages/Conversations)\"]\n      SRCH[\"Search Service (Indexers)\"]\n      OS[\"OpenSearch (FTS + k-NN)\"]\n      LLMR[\"LLM Router (Go)\"]\n      PVEXT[\"Provider APIs (\\\"OpenAI/Anthropic/Azure OpenAI/Vertex\\\")\"]\n      VLLM[\"In-house Inference (vLLM on GPU) - Istio mTLS\"]\n      FILES[\"File Ingestion (S3 + Textract + Tika + Object Lambda)\"]\n      S3[\"Amazon S3 (Blobs)\"]\n      MSK[\"Kafka (AWS MSK)\"]\n      COST[\"Cost/Billing Service\"]\n      CH[\"ClickHouse (Analytics/Costs)\"]\n      MON[\"Prometheus/Grafana/Jaeger/Loki\"]\n      ADMIN[\"Admin Dashboard (Next.js)\"]\n    end\n\n    CF --> ALB --> GW\n    GW --> AUTH\n    GW --> RLS\n    RLS --> REDIS\n    GW --> CONV --> PG\n    GW --> LLMR\n    LLMR --> PVEXT\n    LLMR --> VLLM\n    GW --> FILES --> S3\n    CONV --> MSK\n    LLMR --> MSK\n    FILES --> MSK\n    MSK --> COST --> CH\n    MSK --> SRCH --> OS\n    GW --> MON\n    CONV --> MON\n    LLMR --> MON\n    ADMIN --> CH\n    ADMIN --> PG\n    ADMIN --> MON",
+  "dataStorage": [
+    {
+      "store": "PostgreSQL (Citus)",
+      "type": "sql",
+      "justification": "Strong consistency and transactions for conversations/messages; Citus provides horizontal sharding by user_id with high write throughput and low-latency queries"
+    },
+    {
+      "store": "Redis Cluster",
+      "type": "cache",
+      "justification": "Sub-millisecond counters for rate limits, sessions, ephemeral streaming buffers, and hot context windows"
+    },
+    {
+      "store": "Amazon S3",
+      "type": "blob",
+      "justification": "Durable, cost-effective storage for file uploads, images, and large attachments; lifecycle policies for tiering"
+    },
+    {
+      "store": "OpenSearch",
+      "type": "search",
+      "justification": "Full-text and semantic search with k-NN; scalable indexing and near real-time search for conversation history"
+    },
+    {
+      "store": "Kafka (AWS MSK)",
+      "type": "queue",
+      "justification": "Durable, scalable event streaming for usage, billing, indexing, and audit logs decoupling producers/consumers"
+    },
+    {
+      "store": "ClickHouse",
+      "type": "sql",
+      "justification": "High-ingest, columnar analytics for usage and cost reporting; sub-second aggregations at scale"
+    }
+  ],
+  "apiDesign": [
+    {
+      "endpoint": "/v1/ws",
+      "method": "WS",
+      "description": "Bidirectional WebSocket for sending user messages and receiving token-streaming responses and events"
+    },
+    {
+      "endpoint": "/v1/conversations",
+      "method": "POST",
+      "description": "Create a new conversation (title, tags, model selection, visibility)"
+    },
+    {
+      "endpoint": "/v1/conversations",
+      "method": "GET",
+      "description": "List conversations with filters (folder, tag, starred) and pagination"
+    },
+    {
+      "endpoint": "/v1/conversations/{id}",
+      "method": "GET",
+      "description": "Get a conversation with messages (server-side pagination)"
+    },
+    {
+      "endpoint": "/v1/conversations/{id}/messages",
+      "method": "POST",
+      "description": "Add a user message to a conversation (text, file refs, tool calls)"
+    },
+    {
+      "endpoint": "/v1/messages/{id}",
+      "method": "GET",
+      "description": "Get message detail and streaming status"
+    },
+    {
+      "endpoint": "/v1/search",
+      "method": "GET",
+      "description": "Search conversations/messages (full-text + semantic options)"
+    },
+    {
+      "endpoint": "/v1/models",
+      "method": "GET",
+      "description": "List available models and tiers, pricing metadata"
+    },
+    {
+      "endpoint": "/v1/files",
+      "method": "POST",
+      "description": "Initiate file upload and get pre-signed URL; returns file_id"
+    },
+    {
+      "endpoint": "/v1/share/{conversation_id}",
+      "method": "POST",
+      "description": "Create/update share link (public/unlisted/expire)"
+    },
+    {
+      "endpoint": "/v1/usage",
+      "method": "GET",
+      "description": "Per-user usage and remaining quota by period"
+    },
+    {
+      "endpoint": "/v1/admin/metrics",
+      "method": "GET",
+      "description": "Admin: provider health, error rates, throughput, cost summaries"
+    },
+    {
+      "endpoint": "/v1/admin/models",
+      "method": "PUT",
+      "description": "Admin: manage model catalog, routing weights, and availability"
+    }
+  ],
+  "scalabilityStrategy": "- Traffic and sessions: Anycast via Cloudflare to nearest region. Sticky session not required; WebSocket connections are long-lived and evenly distributed via ALB. Gateway pods autoscale on CPU and open FDs; each Go pod targets ~4–5K concurrent WS; 30 pods suffice for 150K WS with headroom per region.\n- Storage: Citus shards by user_id across nodes; co-locate primary and replicas in same AZ to minimize latency. Connection pooling with PgBouncer. Hot partitions handled by rebalancing shards. PITR and logical replication to DR region.\n- Search: OpenSearch domain scales horizontally across data nodes. Index with 1–3 primary shards per index and ILM for rollover. Async indexers consume from Kafka for sustained throughput.\n- LLM routing: Health probes and circuit breakers per provider/region; latency-aware load balancing and hedged requests before first token. In-house vLLM autoscaling on GPU metrics (queue depth, tokens/sec). Keep-alive HTTP/2 pools to reduce TTFB.\n- Rate limiting: Redis Cluster with hash tags for per-user keys ensures single-shard updates. Use sliding window with Lua for atomicity. Quotas aggregated periodically from ClickHouse and persisted to Postgres for authority.\n- WebSockets: Separate HPA based on concurrent connections and network IO. Use SO_REUSEPORT and pod anti-affinity. Idle pings to detect dead peers. Backpressure controls to avoid OOM.\n- Multi-region: Active-active per region; users are region-affined based on home region stored in profile. Cross-region failover via Cloudflare LB health checks; if home region is down, read last durable snapshot from DR and write to degraded mode (queue for backfill) with user-notice.\n- Observability: OpenTelemetry traces propagate across gateway, LLM router, connectors. SLO-based autoscaling and alerting for TTFT and error budgets.",
+  "tradeoffs": [
+    {
+      "decision": "Use PostgreSQL (Citus) for conversations instead of a globally-distributed DB (e.g., Spanner/CockroachDB)",
+      "pros": [
+        "Immediate consistency and strong SQL semantics",
+        "Operational familiarity and cost-effective scaling",
+        "Shard-by-user keeps latency low"
+      ],
+      "cons": [
+        "Cross-region strong consistency not automatic",
+        "Requires shard management and regional affinity policies"
+      ]
+    },
+    {
+      "decision": "WebSockets for streaming vs Server-Sent Events",
+      "pros": [
+        "Bidirectional control channel (cancel, tool calls)",
+        "Better concurrency characteristics and fewer HTTP headers",
+        "Widely supported by CDNs/LBs"
+      ],
+      "cons": [
+        "More complex connection lifecycle management",
+        "Stateful long-lived connections impact autoscaling"
+      ]
+    },
+    {
+      "decision": "OpenSearch for full-text + k-NN vs separate vector DB",
+      "pros": [
+        "Single search stack reduces ops overhead",
+        "Near real-time indexing with scalable ingestion"
+      ],
+      "cons": [
+        "k-NN recall/latency may trail specialized vector DBs",
+        "Index tuning and memory footprint can be heavy"
+      ]
+    },
+    {
+      "decision": "Auth0 for identity instead of building in-house",
+      "pros": [
+        "Faster time-to-market, robust SSO/MFA",
+        "Security updates and compliance handled by vendor"
+      ],
+      "cons": [
+        "Vendor cost and dependency",
+        "Rate limits and token introspection latency considerations"
+      ]
+    },
+    {
+      "decision": "Kafka + ClickHouse for analytics and cost tracking",
+      "pros": [
+        "High-ingest, low-cost analytics at scale",
+        "Flexible schema evolution for events"
+      ],
+      "cons": [
+        "Operational complexity (clusters to manage)",
+        "Eventual consistency for analytics views"
+      ]
+    },
+    {
+      "decision": "In-house vLLM cluster as secondary routing target",
+      "pros": [
+        "Cost control for common models",
+        "Resilience to third-party outages"
+      ],
+      "cons": [
+        "Requires GPU capacity management and model maintenance",
+        "May lag on latest proprietary model capabilities"
+      ]
+    },
+    {
+      "decision": "Async indexing to OpenSearch (eventual) while DB is immediate",
+      "pros": [
+        "Protects write path latency and TTFT",
+        "Scales independently"
+      ],
+      "cons": [
+        "Search results may lag by seconds",
+        "Requires reconciliation jobs for rare failures"
+      ]
+    }
+  ]
+}

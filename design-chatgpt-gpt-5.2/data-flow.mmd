@@ -1,0 +1,56 @@
+sequenceDiagram
+  autonumber
+  participant C as Client
+  participant E as "Edge (CDN/WAF)"
+  participant W as "WebSocket Gateway"
+  participant A as "Auth/Session"
+  participant Q as "Quota (Redis)"
+  participant O as "Chat Orchestrator"
+  participant S as "Conversation Store (YugabyteDB)"
+  participant F as "File Service (S3)"
+  participant L as "LLM Adapter"
+  participant P as "LLM Provider"
+  participant K as "Kafka"
+  participant X as "Search (Elasticsearch)"
+  participant M as "Metering (Flink/ClickHouse)"
+
+  C->>E: Load app + static assets
+  C->>A: Login (OIDC)
+  A-->>C: JWT + refresh token
+  C->>E: WebSocket upgrade with JWT
+  E->>W: Forward WebSocket
+  W->>A: Validate JWT (JWKS) / revocation check
+  A-->>W: OK
+
+  C->>W: Send message (convId, model, text, fileRefs)
+  W->>Q: Check rate limit and quota
+  Q-->>W: Allowed
+  W->>O: Forward message (stream requested)
+
+  par Context + Files
+    O->>S: Read conversation state (strongly consistent)
+    S-->>O: Prior messages + metadata
+    O->>F: Fetch file metadata / signed access (if any)
+    F-->>O: File pointers + extracted text (if available)
+  end
+
+  O->>L: Create completion request (with context)
+  L->>P: Stream request
+  P-->>L: Token stream
+  L-->>O: Normalized token stream
+  O-->>W: Stream tokens
+  W-->>C: Tokens (TTFT < 500ms)
+
+  O->>S: Persist user message + assistant message (atomic txn)
+  S-->>O: Commit OK
+
+  O->>K: Emit events (message.created, usage.recorded, provider.metrics)
+  K-->>X: Indexing consumer updates search
+  K-->>M: Metering consumer aggregates costs/usage
+
+  alt Provider failure
+    P--x L: Error/timeout
+    L->>P: Failover to alternate provider (hedged/circuit breaker)
+    P-->>L: Token stream resumes
+    L-->>O: Continue stream
+  end

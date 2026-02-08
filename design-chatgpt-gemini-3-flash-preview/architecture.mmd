@@ -1,0 +1,18 @@
+graph TD
+    User["Client Apps (Web/Mobile)"] --> GSLB["Global Load Balancer"]
+    GSLB --> RegionA["Region: US-East"]
+    GSLB --> RegionB["Region: EU-West"]
+    subgraph "Regional Cluster"
+    RegionA --> Gateway["API Gateway (Kong)"]
+    Gateway --> Auth["Auth Service (OIDC)"]
+    Gateway --> ChatSvc["Chat Service"]
+    ChatSvc --> Cache["Redis (Session/Context)"]
+    ChatSvc --> DB["Sharded PostgreSQL (History)"]
+    ChatSvc --> InfOrch["Inference Orchestrator"]
+    InfOrch --> LLM1["OpenAI API"]
+    InfOrch --> LLM2["Self-hosted Llama3"]
+    ChatSvc --> Blob["S3 (Files/Images)"]
+    ChatSvc --> Search["Elasticsearch"]
+    ChatSvc --> Kafka["Message Bus (Kafka)"]
+    Kafka --> Billing["Billing Service"]
+    end

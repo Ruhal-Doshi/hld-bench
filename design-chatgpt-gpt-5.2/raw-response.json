@@ -1,0 +1,324 @@
+{
+  "title": "ChatGPT-like Web Application (Multi-turn, Streaming, Multimodal, Multi-Model) — High-Level Design",
+  "overview": "The system is a globally distributed, multi-tenant conversational AI web application supporting authenticated users, multi-turn threads, token-streaming responses, file/multimodal inputs, conversation search, sharing links, and an admin cost/usage dashboard. It is designed for 20M DAU and ~500M messages/day with strict latency requirements (TTFT < 500ms) and high concurrency (>=100K concurrent WebSocket connections per region).\n\nThe architecture separates the latency-critical request/streaming path (WebSocket Gateway + Orchestrator + LLM adapters) from durable storage, indexing, analytics, and billing pipelines. Conversations are stored in a strongly consistent SQL store, while search and analytics are powered by specialized systems. LLM backend failures are handled via circuit breakers, hedged requests, and provider failover with per-token streaming preserved.",
+  "requirements": {
+    "functional": [
+      "User authentication (SSO/email), session management, and tier entitlements",
+      "Create/read/update conversation threads with multi-turn context retention",
+      "Real-time token-by-token streaming of assistant responses to the client",
+      "Model selection per conversation/message across multiple LLM backends",
+      "Conversation history browsing, organization (folders/tags), and search",
+      "File upload (images/documents) and multimodal prompts",
+      "Share conversations via public links with optional redaction/permissions",
+      "Rate limiting and usage quotas per user/tier with enforcement",
+      "Markdown rendering support (code blocks, tables) and safe sanitization",
+      "Admin dashboard for monitoring usage, latency, errors, and costs"
+    ],
+    "nonFunctional": [
+      "Scale: 20M DAU, 500M messages/day, avg 10 turns/conversation",
+      "Latency: streaming must start within 500ms time-to-first-token",
+      "Concurrency: >=100K concurrent WebSocket connections per region",
+      "Durability + immediate consistency for conversation history",
+      "High availability with automatic failover across LLM providers/regions",
+      "Accurate per-request/per-token cost tracking for billing",
+      "Security: encryption in transit/at rest, least privilege, audit logs",
+      "Compliance readiness (PII controls, retention policies, GDPR delete)",
+      "Operational excellence: observability, alerting, safe deploys (canary)",
+      "Abuse prevention: bot detection, prompt injection/file malware scanning"
+    ]
+  },
+  "components": [
+    {
+      "name": "Web Client (Browser) + Mobile",
+      "responsibility": "UI for chat, conversation list, model selection, file upload, markdown rendering, and real-time streaming display via WebSocket/SSE fallback.",
+      "techChoice": "Next.js (React) + TypeScript; Markdown-it + DOMPurify; WebSocket client",
+      "justification": "Next.js supports SSR/SPA, fast iteration, and edge-friendly deployments. Markdown-it is extensible for code blocks/tables; DOMPurify prevents XSS. WebSocket enables low-latency bidirectional streaming."
+    },
+    {
+      "name": "Global DNS + CDN/WAF",
+      "responsibility": "Global traffic steering, TLS termination at edge, DDoS protection, caching of static assets, WAF rules, and bot mitigation.",
+      "techChoice": "Cloudflare (DNS, CDN, WAF, Bot Management)",
+      "justification": "Strong global presence reduces latency and protects origin. Bot/DDoS controls are critical at 20M DAU."
+    },
+    {
+      "name": "API Gateway / Edge",
+      "responsibility": "Routing for REST APIs and WebSocket upgrades, auth pre-checks, request shaping, and regional failover.",
+      "techChoice": "Envoy Gateway (Kubernetes) + Cloudflare origin rules",
+      "justification": "Envoy provides high-performance L7 routing, retries, timeouts, and observability. Works well with WebSockets and service mesh patterns."
+    },
+    {
+      "name": "Auth & Session Service",
+      "responsibility": "User signup/login, OAuth/OIDC, session issuance, refresh, MFA support, and entitlement lookup for tiers.",
+      "techChoice": "Auth0 (OIDC) + internal Session API using JWT (short-lived) + Redis for session revocation",
+      "justification": "Auth0 reduces security risk and time-to-market. Short-lived JWT minimizes DB calls; Redis enables immediate revocation/ban."
+    },
+    {
+      "name": "WebSocket Gateway (Streaming Gateway)",
+      "responsibility": "Manages WebSocket connections, fan-out of token streams, backpressure, connection state, and regional scaling to >=100K concurrent connections.",
+      "techChoice": "Kubernetes-deployed Node.js (uWebSockets.js) or Go (fasthttp + websocket) service; Redis Cluster for ephemeral connection metadata",
+      "justification": "Specialized gateway isolates long-lived connections from general API traffic. Go/uws handle high concurrency efficiently; Redis supports lightweight presence/state without coupling to DB."
+    },
+    {
+      "name": "Chat Orchestrator Service",
+      "responsibility": "Core chat workflow: validate quotas, build context, call LLM backends, stream tokens, handle tool/file references, persist messages atomically, and emit usage/cost events.",
+      "techChoice": "Go microservice (gRPC internally) with circuit breakers (hystrix-like) and retries (Envoy + app-level)",
+      "justification": "Go offers predictable latency and high throughput. Central orchestration simplifies consistency and billing correctness while keeping streaming path tight."
+    },
+    {
+      "name": "LLM Provider Adapter Layer",
+      "responsibility": "Uniform interface for multiple model providers (e.g., OpenAI, Anthropic, AWS Bedrock, self-hosted vLLM), token streaming normalization, automatic failover/hedging, and provider-specific auth.",
+      "techChoice": "Internal service/library used by Orchestrator; supports OpenAI-compatible streaming + Bedrock + Anthropic; optional self-hosted vLLM on GPU nodes",
+      "justification": "Decouples product from provider APIs and enables rapid switching, routing, and fallback strategies to meet availability/latency constraints."
+    },
+    {
+      "name": "Conversation Service",
+      "responsibility": "CRUD for conversations, messages, metadata (title, tags, folders), share settings, and immediate-consistency reads.",
+      "techChoice": "Java/Kotlin (Spring Boot) or Go; PostgreSQL-compatible distributed SQL (YugabyteDB)",
+      "justification": "Distributed SQL provides strong consistency with horizontal scaling and multi-region resilience. A dedicated service encapsulates schema and access patterns."
+    },
+    {
+      "name": "Search/Indexing Service",
+      "responsibility": "Index conversation/message text and metadata for fast search, filtering, and ranking; supports near-real-time updates.",
+      "techChoice": "Elasticsearch (managed, e.g., Elastic Cloud) + Kafka Connect for indexing pipeline",
+      "justification": "Elasticsearch is well-suited for full-text search and faceting at large scale. Kafka-based ingestion decouples indexing from the write path."
+    },
+    {
+      "name": "File Ingestion & Multimodal Pipeline",
+      "responsibility": "Handle uploads, virus/malware scanning, document parsing (PDF/DOCX), image preprocessing, OCR, embedding generation, and secure storage/links.",
+      "techChoice": "S3-compatible object storage (Amazon S3) + CloudFront signed URLs; ClamAV scanning; Apache Tika for parsing; optional GPU service for vision embeddings",
+      "justification": "Object storage is the standard for large binary data. Scanning and parsing protect the platform. Signed URLs reduce origin load and limit unauthorized access."
+    },
+    {
+      "name": "Rate Limiting & Quota Service",
+      "responsibility": "Per-user/per-tier rate limits (RPS), token quotas, daily/monthly usage, and enforcement in the hot path.",
+      "techChoice": "Redis Cluster (token bucket/leaky bucket) + internal Quota API; optional Envoy global rate limit service",
+      "justification": "Redis offers sub-millisecond counters suitable for the 500ms TTFT constraint. Central policy keeps enforcement consistent across gateways."
+    },
+    {
+      "name": "Usage/Cost Metering Service",
+      "responsibility": "Compute accurate costs per request (tokens in/out, model pricing, file processing costs), generate billing-grade ledgers, and expose aggregates to admin/user dashboards.",
+      "techChoice": "Kafka + stream processing (Apache Flink) + ClickHouse for analytics + PostgreSQL ledger tables",
+      "justification": "Flink enables real-time aggregation while a PostgreSQL ledger ensures correctness and auditability. ClickHouse supports high-QPS analytics for dashboards."
+    },
+    {
+      "name": "Sharing Service",
+      "responsibility": "Create public share links, snapshot/redaction, access control, and view tracking.",
+      "techChoice": "Go service + PostgreSQL (YugabyteDB) + CDN caching for public read views",
+      "justification": "Share links require durable mapping and permissions. CDN accelerates read-heavy public access."
+    },
+    {
+      "name": "Admin & Observability Stack",
+      "responsibility": "Monitoring, tracing, logging, incident response, and admin dashboard for usage/cost/latency/provider health.",
+      "techChoice": "Prometheus + Grafana; OpenTelemetry + Tempo/Jaeger; Loki; Sentry; Argo Rollouts for canary",
+      "justification": "Standard cloud-native observability with strong ecosystem; canary reduces risk when changing critical streaming paths."
+    },
+    {
+      "name": "Message Bus / Event Backbone",
+      "responsibility": "Decouple write path from indexing, analytics, notifications, and offline processing.",
+      "techChoice": "Apache Kafka (managed, e.g., Confluent Cloud)",
+      "justification": "Kafka scales to very high throughput (500M messages/day) and enables replayable event streams for multiple consumers."
+    }
+  ],
+  "dataFlow": "sequenceDiagram\n  autonumber\n  participant C as Client\n  participant E as \"Edge (CDN/WAF)\"\n  participant W as \"WebSocket Gateway\"\n  participant A as \"Auth/Session\"\n  participant Q as \"Quota (Redis)\"\n  participant O as \"Chat Orchestrator\"\n  participant S as \"Conversation Store (YugabyteDB)\"\n  participant F as \"File Service (S3)\"\n  participant L as \"LLM Adapter\"\n  participant P as \"LLM Provider\"\n  participant K as \"Kafka\"\n  participant X as \"Search (Elasticsearch)\"\n  participant M as \"Metering (Flink/ClickHouse)\"\n\n  C->>E: Load app + static assets\n  C->>A: Login (OIDC)\n  A-->>C: JWT + refresh token\n  C->>E: WebSocket upgrade with JWT\n  E->>W: Forward WebSocket\n  W->>A: Validate JWT (JWKS) / revocation check\n  A-->>W: OK\n\n  C->>W: Send message (convId, model, text, fileRefs)\n  W->>Q: Check rate limit and quota\n  Q-->>W: Allowed\n  W->>O: Forward message (stream requested)\n\n  par Context + Files\n    O->>S: Read conversation state (strongly consistent)\n    S-->>O: Prior messages + metadata\n    O->>F: Fetch file metadata / signed access (if any)\n    F-->>O: File pointers + extracted text (if available)\n  end\n\n  O->>L: Create completion request (with context)\n  L->>P: Stream request\n  P-->>L: Token stream\n  L-->>O: Normalized token stream\n  O-->>W: Stream tokens\n  W-->>C: Tokens (TTFT < 500ms)\n\n  O->>S: Persist user message + assistant message (atomic txn)\n  S-->>O: Commit OK\n\n  O->>K: Emit events (message.created, usage.recorded, provider.metrics)\n  K-->>X: Indexing consumer updates search\n  K-->>M: Metering consumer aggregates costs/usage\n\n  alt Provider failure\n    P--x L: Error/timeout\n    L->>P: Failover to alternate provider (hedged/circuit breaker)\n    P-->>L: Token stream resumes\n    L-->>O: Continue stream\n  end",
+  "architectureDiagram": "flowchart TD\n  U[\"Users (Web/Mobile)\"] --> CDN[\"Cloudflare (CDN/WAF/DNS)\"]\n  CDN --> GW[\"Envoy Gateway (REST + WS upgrade)\"]\n\n  GW --> WS[\"WebSocket Gateway\"]\n  GW --> API[\"REST APIs (Kubernetes)\"]\n\n  API --> AUTH[\"Auth/Session (Auth0 + Session API)\"]\n  API --> CONV[\"Conversation Service\"]\n  API --> SHARE[\"Sharing Service\"]\n  API --> FILE[\"File Service\"]\n  API --> ADMIN[\"Admin API\"]\n\n  WS --> QUOTA[\"Rate Limit/Quota (Redis Cluster)\"]\n  WS --> ORCH[\"Chat Orchestrator\"]\n\n  ORCH --> LLM[\"LLM Adapter Layer\"]\n  LLM --> P1[\"Provider A (e.g., OpenAI)\"]\n  LLM --> P2[\"Provider B (e.g., Anthropic)\"]\n  LLM --> P3[\"Provider C (AWS Bedrock)\"]\n  LLM --> P4[\"Self-hosted (vLLM on GPU)\"]\n\n  CONV --> DB[\"YugabyteDB (Distributed SQL)\"]\n  SHARE --> DB\n  AUTH --> REDIS[\"Redis (revocation/session cache)\"]\n\n  FILE --> OBJ[\"Object Storage (S3)\"]\n  FILE --> SCAN[\"Malware Scan (ClamAV)\"]\n  FILE --> PARSE[\"Doc Parse/OCR (Tika/OCR)\"]\n\n  ORCH --> KAFKA[\"Kafka\"]\n  CONV --> KAFKA\n  FILE --> KAFKA\n\n  KAFKA --> ES[\"Elasticsearch (Search)\"]\n  KAFKA --> FLINK[\"Flink (stream processing)\"]\n  FLINK --> CH[\"ClickHouse (analytics)\"]\n  FLINK --> LEDGER[\"PostgreSQL Ledger (billing-grade)\"]\n\n  subgraph OBS[\"Observability\"]\n    PROM[\"Prometheus\"]\n    GRAF[\"Grafana\"]\n    OTEL[\"OpenTelemetry Collector\"]\n    LOKI[\"Loki\"]\n    TEMPO[\"Tempo/Jaeger\"]\n  end\n\n  WS --> OTEL\n  ORCH --> OTEL\n  API --> OTEL\n  OTEL --> LOKI\n  OTEL --> TEMPO\n  PROM --> GRAF",
+  "dataStorage": [
+    {
+      "store": "YugabyteDB (PostgreSQL-compatible distributed SQL)",
+      "type": "sql",
+      "justification": "Strong consistency and durability with horizontal scaling and multi-region replication; ideal for immediately consistent conversation history and share-link metadata."
+    },
+    {
+      "store": "Redis Cluster",
+      "type": "cache",
+      "justification": "Sub-millisecond counters for rate limiting/quota enforcement; session revocation; ephemeral WebSocket connection metadata."
+    },
+    {
+      "store": "Apache Kafka",
+      "type": "queue",
+      "justification": "High-throughput event backbone to decouple indexing, analytics, metering, and async file processing from the latency-critical chat path."
+    },
+    {
+      "store": "Amazon S3 (Object Storage)",
+      "type": "blob",
+      "justification": "Durable, scalable storage for user uploads (images/documents) and generated artifacts; integrates with signed URLs and lifecycle policies."
+    },
+    {
+      "store": "Elasticsearch",
+      "type": "search",
+      "justification": "Full-text search with faceting for conversation history at scale, supporting near-real-time indexing from Kafka."
+    },
+    {
+      "store": "ClickHouse",
+      "type": "nosql",
+      "justification": "High-performance OLAP for admin/user dashboards on usage, costs, latency, and provider performance."
+    },
+    {
+      "store": "PostgreSQL (Billing Ledger)",
+      "type": "sql",
+      "justification": "Billing-grade immutable ledger entries require strict constraints, transactions, and auditability; kept separate from high-volume chat OLTP."
+    }
+  ],
+  "apiDesign": [
+    {
+      "endpoint": "/v1/auth/session",
+      "method": "POST",
+      "description": "Exchange OIDC code for application session (JWT/refresh), return user profile and tier entitlements."
+    },
+    {
+      "endpoint": "/v1/conversations",
+      "method": "POST",
+      "description": "Create a new conversation (optionally with selected model, system prompt, folder/tags)."
+    },
+    {
+      "endpoint": "/v1/conversations/{conversationId}",
+      "method": "GET",
+      "description": "Fetch conversation metadata and messages with strong consistency (latest turns)."
+    },
+    {
+      "endpoint": "/v1/conversations/{conversationId}/messages",
+      "method": "POST",
+      "description": "Send a user message (non-streaming fallback) and receive the assistant response when complete."
+    },
+    {
+      "endpoint": "/v1/ws/chat",
+      "method": "WS",
+      "description": "WebSocket endpoint for streaming chat. Client sends message frames; server streams tokens/events (delta tokens, tool/file status, final)."
+    },
+    {
+      "endpoint": "/v1/files",
+      "method": "POST",
+      "description": "Request an upload session; returns signed upload URL(s) and fileId(s)."
+    },
+    {
+      "endpoint": "/v1/files/{fileId}",
+      "method": "GET",
+      "description": "Fetch file metadata and processing status (scanned/parsed/ready)."
+    },
+    {
+      "endpoint": "/v1/search",
+      "method": "GET",
+      "description": "Search conversations/messages by query, filters (date, model, tags), and pagination."
+    },
+    {
+      "endpoint": "/v1/share",
+      "method": "POST",
+      "description": "Create a public share link for a conversation snapshot with optional redaction rules."
+    },
+    {
+      "endpoint": "/v1/share/{shareId}",
+      "method": "GET",
+      "description": "Retrieve shared conversation snapshot for public viewing (read-only)."
+    },
+    {
+      "endpoint": "/v1/usage",
+      "method": "GET",
+      "description": "Return current usage, remaining quotas, and recent cost estimates for the authenticated user."
+    },
+    {
+      "endpoint": "/v1/admin/metrics",
+      "method": "GET",
+      "description": "Admin-only: aggregated metrics (DAU, messages, token volume, costs, provider error rates/latency)."
+    }
+  ],
+  "scalabilityStrategy": "Global active-active deployment across multiple regions (at least 3) with GeoDNS steering to nearest healthy region. WebSocket Gateways scale horizontally behind Envoy with connection-aware load balancing; keep services stateless and store only ephemeral connection metadata in Redis. The hot path (quota check, context fetch, LLM streaming) is optimized for TTFT by: (1) precomputing and caching conversation summaries, (2) limiting context window with rolling summarization, (3) parallelizing context fetch and file metadata fetch, and (4) using hedged requests to LLM providers after a short delay when p95 latency rises.\n\nConversation history writes are strongly consistent using distributed SQL with synchronous replication and tuned transaction boundaries (persist user message immediately; persist assistant message incrementally with periodic checkpoints, then finalize). Kafka decouples indexing/analytics and supports replay. Elasticsearch scales by sharding by tenant/time; ClickHouse scales by distributed tables and partitioning by date/model. Rate limiting uses Redis Cluster with key hashing by userId to spread load; per-tier policies are cached at gateways. For 500M messages/day, partition Kafka topics by conversationId hash, and use consumer groups for Search and Metering pipelines. LLM adapters implement circuit breakers, bulkheads per provider, and region-aware routing; self-hosted vLLM provides a fallback capacity pool for reliability and cost control.",
+  "tradeoffs": [
+    {
+      "decision": "Use YugabyteDB (distributed SQL) for conversation history instead of DynamoDB/Cassandra",
+      "pros": [
+        "Strong consistency and SQL transactions simplify immediate-consistency requirements",
+        "Secondary indexes and relational modeling for conversations/messages/shares",
+        "Multi-region replication and HA with familiar Postgres ecosystem"
+      ],
+      "cons": [
+        "Higher operational complexity and cost than single-region Postgres",
+        "Write latency can increase with synchronous multi-region replication",
+        "Careful schema/partition design needed to avoid hotspots"
+      ]
+    },
+    {
+      "decision": "WebSocket Gateway as a separate tier from REST API services",
+      "pros": [
+        "Optimized for long-lived connections and high concurrency (100K+ per region)",
+        "Isolates streaming workloads from standard API traffic",
+        "Simplifies backpressure handling and connection lifecycle management"
+      ],
+      "cons": [
+        "Additional component to operate and secure",
+        "More complex debugging across gateway-orchestrator boundary"
+      ]
+    },
+    {
+      "decision": "Redis-based quota enforcement in the hot path",
+      "pros": [
+        "Very low latency suitable for TTFT < 500ms",
+        "Supports token bucket algorithms and tier-based policies",
+        "Reduces load on primary databases"
+      ],
+      "cons": [
+        "Distributed counters require careful design for correctness (race conditions)",
+        "Redis outages can block traffic unless graceful degradation is implemented"
+      ]
+    },
+    {
+      "decision": "Kafka event-driven pipelines for search indexing and cost analytics",
+      "pros": [
+        "Decouples latency-critical chat from heavy indexing/analytics",
+        "Enables replay, backfills, and multiple consumers",
+        "Handles very high throughput (500M messages/day)"
+      ],
+      "cons": [
+        "Eventual consistency for search/analytics (not for core conversation reads)",
+        "Requires schema governance and exactly-once/at-least-once considerations"
+      ]
+    },
+    {
+      "decision": "Elasticsearch for conversation search",
+      "pros": [
+        "Best-in-class full-text search, faceting, and relevance tuning",
+        "Scales horizontally via sharding and replicas",
+        "Rich query DSL for product features"
+      ],
+      "cons": [
+        "Operational overhead: shard sizing, reindexing, cluster tuning",
+        "Index lag (seconds) unless aggressively tuned"
+      ]
+    },
+    {
+      "decision": "LLM adapter with automatic failover and hedged requests",
+      "pros": [
+        "Improves availability and tail latency under provider issues",
+        "Abstracts provider-specific streaming formats and pricing",
+        "Supports routing by cost/performance/tier"
+      ],
+      "cons": [
+        "Complexity in maintaining consistent user experience across providers",
+        "Risk of duplicate costs with hedged requests if not carefully canceled",
+        "Provider output differences can affect response consistency"
+      ]
+    },
+    {
+      "decision": "Billing-grade cost ledger in PostgreSQL separate from OLTP conversation store",
+      "pros": [
+        "Strong auditability and immutability patterns for billing",
+        "Protects core conversation store from analytics/billing query load",
+        "Simplifies reconciliation and dispute handling"
+      ],
+      "cons": [
+        "Data duplication and additional ETL/stream processing",
+        "Requires reconciliation logic between provider usage and internal metering"
+      ]
+    },
+    {
+      "decision": "S3 + signed URLs for file uploads and downloads",
+      "pros": [
+        "Highly scalable and cost-effective for large binary storage",
+        "Offloads bandwidth from application services",
+        "Supports lifecycle policies and encryption controls"
+      ],
+      "cons": [
+        "Requires careful access control to prevent link leakage",
+        "Additional pipeline complexity for scanning/parsing and status tracking"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,305 @@
+{
+  "title": "ChatGPT-like Conversational AI Web Application - High-Level Design",
+  "overview": "This system design outlines a globally distributed, highly scalable conversational AI platform capable of serving 20 million daily active users with 500 million messages per day. The architecture employs a microservices approach with dedicated services for authentication, conversation management, real-time streaming, and LLM orchestration. The design emphasizes low-latency streaming responses (sub-500ms time to first token), horizontal scalability to support 100K+ concurrent WebSocket connections per region, and robust fault tolerance with automatic LLM backend failover.\n\nThe system leverages a multi-region deployment with geographic load balancing, employs PostgreSQL with read replicas for durable conversation storage, Redis for session management and caching, and Kafka for asynchronous event processing. A dedicated LLM Gateway service abstracts multiple LLM providers (OpenAI, Anthropic, custom models), implements intelligent routing, rate limiting, and cost tracking. Real-time bidirectional communication is handled via WebSocket connections through a scalable connection manager, while a CDN delivers static assets and cached content globally.",
+  "requirements": {
+    "functional": [
+      "User registration, login, and session management with JWT tokens",
+      "Create, read, update, and delete conversation threads",
+      "Multi-turn conversations with full context retention across messages",
+      "Real-time streaming of LLM responses token-by-token via WebSocket",
+      "Support for multiple LLM backends with user-selectable models",
+      "Conversation history search and organization (folders, tags, timestamps)",
+      "File upload and multimodal input processing (images, PDFs, documents)",
+      "Generate shareable public links for conversations with privacy controls",
+      "Markdown rendering support including code syntax highlighting",
+      "Admin dashboard for usage analytics, cost monitoring, and user management",
+      "Rate limiting based on user tier (free, pro, enterprise)",
+      "Usage quota enforcement and billing integration"
+    ],
+    "nonFunctional": [
+      "Support 20 million daily active users and 500 million messages/day",
+      "Time to first token (TTFT) must be under 500ms",
+      "Handle 100K+ concurrent WebSocket connections per region",
+      "99.9% availability with automatic failover for LLM backend failures",
+      "Conversation data must be immediately consistent and durable",
+      "Horizontal scalability for all stateless services",
+      "Geographic distribution across multiple regions for low latency",
+      "Per-request cost tracking with 99.99% accuracy for billing",
+      "Support message throughput of 5,800 messages/second sustained",
+      "Data retention for at least 90 days with archival for older conversations",
+      "Security compliance (encryption at rest and in transit, GDPR, SOC2)"
+    ]
+  },
+  "components": [
+    {
+      "name": "API Gateway",
+      "responsibility": "Single entry point for all client requests; handles routing, authentication validation, rate limiting, request/response transformation, and SSL termination",
+      "techChoice": "Kong Gateway with OpenResty (Nginx + Lua)",
+      "justification": "Kong provides high-performance reverse proxy with built-in plugins for authentication, rate limiting, logging, and circuit breaking. Handles 10K+ RPS per instance with horizontal scalability and proven in production at scale."
+    },
+    {
+      "name": "Authentication Service",
+      "responsibility": "User registration, login, JWT token issuance and validation, OAuth integration, session management, and user profile management",
+      "techChoice": "Node.js with Passport.js + Auth0 for identity management",
+      "justification": "Auth0 provides enterprise-grade authentication with built-in security features, MFA, social login, and scales automatically. Node.js offers fast token validation and can handle 5K+ auth requests per second per instance."
+    },
+    {
+      "name": "WebSocket Connection Manager",
+      "responsibility": "Maintains persistent WebSocket connections, handles connection lifecycle, message routing, presence management, and broadcasts streaming responses to clients",
+      "techChoice": "Go with Gorilla WebSocket library, deployed on Kubernetes with HPA",
+      "justification": "Go excels at concurrent connection handling with lightweight goroutines. Each instance can handle 10K+ concurrent WebSockets with minimal memory overhead. Stateless design allows horizontal scaling based on connection count."
+    },
+    {
+      "name": "Conversation Service",
+      "responsibility": "CRUD operations for conversation threads, message persistence, context window management, conversation search, and thread organization",
+      "techChoice": "Java Spring Boot with Spring Data JPA",
+      "justification": "Spring Boot provides mature transaction management, excellent PostgreSQL integration, and strong consistency guarantees. JPA simplifies complex queries for conversation history and search. Battle-tested at enterprise scale."
+    },
+    {
+      "name": "LLM Gateway Service",
+      "responsibility": "Abstracts multiple LLM providers, routes requests to appropriate backends, handles streaming, implements retry logic with exponential backoff, tracks costs per request, and provides automatic failover",
+      "techChoice": "Python with FastAPI and LangChain for LLM orchestration",
+      "justification": "Python ecosystem has best LLM library support (OpenAI SDK, Anthropic SDK, transformers). FastAPI provides async streaming support essential for token-by-token delivery. LangChain simplifies multi-provider integration and context management."
+    },
+    {
+      "name": "File Processing Service",
+      "responsibility": "Handles file uploads, validates file types and sizes, extracts text from documents (OCR, PDF parsing), processes images for vision models, and stores files in object storage",
+      "techChoice": "Python with Celery for async processing, Tesseract for OCR, PyPDF2 for PDF parsing",
+      "justification": "Python has rich libraries for document processing and image manipulation. Celery provides distributed task queue for async processing of large files without blocking API responses. Can scale workers independently based on queue depth."
+    },
+    {
+      "name": "Search Service",
+      "responsibility": "Indexes conversation content, provides full-text search across message history, supports filtering by date, model, and tags",
+      "techChoice": "Elasticsearch with custom analyzers for semantic search",
+      "justification": "Elasticsearch provides sub-second full-text search across billions of documents. Supports complex queries, filtering, and aggregations. Can be extended with vector embeddings for semantic search. Scales horizontally with sharding."
+    },
+    {
+      "name": "Rate Limiter Service",
+      "responsibility": "Enforces per-user and per-tier rate limits, quota management, token bucket algorithm implementation, and communicates with billing service",
+      "techChoice": "Redis with Lua scripts for atomic rate limiting operations",
+      "justification": "Redis provides in-memory performance (<1ms latency) essential for rate limit checks on every request. Lua scripts ensure atomic operations for token bucket algorithms. Redis Cluster provides high availability and scales to millions of users."
+    },
+    {
+      "name": "Analytics & Monitoring Service",
+      "responsibility": "Collects usage metrics, tracks costs per request and per user, monitors system health, generates reports for admin dashboard",
+      "techChoice": "ClickHouse for OLAP analytics with Grafana for visualization",
+      "justification": "ClickHouse excels at high-volume time-series analytics with billions of rows, providing sub-second query performance for dashboards. Columnar storage reduces costs. Grafana provides rich visualization for admin dashboards."
+    },
+    {
+      "name": "Notification Service",
+      "responsibility": "Sends email notifications, push notifications, and in-app alerts for quota limits, system updates, and shared conversations",
+      "techChoice": "Node.js with SendGrid for email, Firebase Cloud Messaging for push",
+      "justification": "SendGrid provides reliable email delivery with analytics. FCM supports cross-platform push notifications. Node.js event-driven architecture handles high-volume async notifications efficiently."
+    },
+    {
+      "name": "Share Service",
+      "responsibility": "Generates unique shareable links for conversations, manages privacy settings and expiration, renders public conversation views",
+      "techChoice": "Go with Redis for link metadata caching",
+      "justification": "Go provides fast link generation and validation. Redis caches share metadata to avoid database lookups on every public link access. Stateless design allows easy scaling for viral shared conversations."
+    }
+  ],
+  "dataFlow": "sequenceDiagram\n    participant User\n    participant WS as WebSocket Manager\n    participant API as API Gateway\n    participant Auth as Auth Service\n    participant Conv as Conversation Service\n    participant LLM as LLM Gateway\n    participant Redis\n    participant PG as PostgreSQL\n    participant Kafka\n    participant ExtLLM as External LLM (OpenAI)\n    \n    User->>API: POST /api/v1/auth/login\n    API->>Auth: Validate credentials\n    Auth->>PG: Query user data\n    PG-->>Auth: User record + tier\n    Auth->>Redis: Store session (JWT)\n    Auth-->>API: JWT tokens\n    API-->>User: Access token + refresh token\n    \n    User->>API: POST /api/v1/conversations\n    API->>Auth: Validate JWT\n    Auth->>Redis: Check session\n    Redis-->>Auth: Session valid\n    API->>Conv: Create conversation\n    Conv->>PG: INSERT conversation\n    PG-->>Conv: conversation_id\n    Conv-->>User: conversation_id, metadata\n    \n    User->>WS: WebSocket connect /ws/v1/stream\n    WS->>Auth: Validate token\n    Auth->>Redis: Verify session\n    WS->>Redis: Store connection metadata\n    WS-->>User: Connection established\n    \n    User->>WS: Send message (via WebSocket)\n    WS->>API: Rate limit check\n    API->>Redis: Check user quota/rate\n    Redis-->>API: Allowed\n    WS->>Conv: Save user message\n    Conv->>PG: INSERT message\n    Conv->>Kafka: Publish message event\n    Conv-->>WS: message_id\n    \n    WS->>LLM: Forward message + context\n    LLM->>PG: Load conversation history\n    PG-->>LLM: Previous messages (context)\n    LLM->>Redis: Check cached context\n    LLM->>ExtLLM: Stream request with context\n    \n    loop Token-by-token streaming\n        ExtLLM-->>LLM: Token chunk\n        LLM->>LLM: Track cost\n        LLM-->>WS: Stream token\n        WS-->>User: Push token via WebSocket\n    end\n    \n    ExtLLM-->>LLM: Stream complete\n    LLM->>Conv: Save assistant response\n    Conv->>PG: INSERT assistant message\n    LLM->>Kafka: Publish completion event (cost, latency)\n    LLM->>Redis: Update usage metrics\n    LLM-->>WS: Completion signal\n    WS-->>User: End of message marker\n    \n    Kafka->>Analytics: Consume usage events\n    Analytics->>ClickHouse: Store metrics\n    \n    User->>API: GET /api/v1/conversations/search?q=example\n    API->>Search: Full-text search\n    Search->>Elasticsearch: Query\n    Elasticsearch-->>Search: Results\n    Search-->>User: Matching conversations",
+  "architectureDiagram": "graph TD\n    Client[\"Client (Web/Mobile)\"]\n    CDN[\"CloudFront CDN\"]\n    GLB[\"Global Load Balancer (Route53)\"]\n    \n    subgraph \"Region 1\"\n        ALB1[\"Application Load Balancer\"]\n        Kong1[\"API Gateway (Kong)\"]\n        WS1[\"WebSocket Manager (Go)\"]\n        Auth1[\"Auth Service (Node.js)\"]\n        Conv1[\"Conversation Service (Java)\"]\n        LLM1[\"LLM Gateway (Python)\"]\n        File1[\"File Processing (Python)\"]\n        Share1[\"Share Service (Go)\"]\n        RateLimit1[\"Rate Limiter (Redis+Lua)\"]\n    end\n    \n    subgraph \"Region 2\"\n        ALB2[\"Application Load Balancer\"]\n        Kong2[\"API Gateway (Kong)\"]\n        WS2[\"WebSocket Manager (Go)\"]\n        Auth2[\"Auth Service (Node.js)\"]\n        Conv2[\"Conversation Service (Java)\"]\n        LLM2[\"LLM Gateway (Python)\"]\n    end\n    \n    subgraph \"Data Layer\"\n        PG_Primary[\"PostgreSQL Primary (Citus)\"]\n        PG_Replica1[\"PostgreSQL Read Replica 1\"]\n        PG_Replica2[\"PostgreSQL Read Replica 2\"]\n        Redis_Cluster[\"Redis Cluster\"]\n        ES[\"Elasticsearch Cluster\"]\n        S3[\"Amazon S3\"]\n        Kafka[\"Apache Kafka Cluster\"]\n        ClickHouse[\"ClickHouse Cluster\"]\n    end\n    \n    subgraph \"External Services\"\n        OpenAI[\"OpenAI API\"]\n        Anthropic[\"Anthropic API\"]\n        Custom[\"Custom LLM Endpoints\"]\n    end\n    \n    subgraph \"Supporting Services\"\n        Search[\"Search Service (ES)\"]\n        Analytics[\"Analytics Service\"]\n        Notif[\"Notification Service\"]\n    end\n    \n    Client --> CDN\n    Client --> GLB\n    CDN --> S3\n    GLB --> ALB1\n    GLB --> ALB2\n    \n    ALB1 --> Kong1\n    Kong1 --> WS1\n    Kong1 --> Auth1\n    Kong1 --> Conv1\n    Kong1 --> Share1\n    Kong1 --> File1\n    \n    ALB2 --> Kong2\n    Kong2 --> WS2\n    Kong2 --> Auth2\n    Kong2 --> Conv2\n    Kong2 --> LLM2\n    \n    WS1 --> LLM1\n    Conv1 --> LLM1\n    WS2 --> LLM2\n    Conv2 --> LLM2\n    \n    Auth1 --> Redis_Cluster\n    Auth2 --> Redis_Cluster\n    RateLimit1 --> Redis_Cluster\n    \n    Conv1 --> PG_Primary\n    Conv1 --> PG_Replica1\n    Conv2 --> PG_Primary\n    Conv2 --> PG_Replica2\n    \n    LLM1 --> OpenAI\n    LLM1 --> Anthropic\n    LLM1 --> Custom\n    LLM2 --> OpenAI\n    LLM2 --> Anthropic\n    \n    File1 --> S3\n    Share1 --> Redis_Cluster\n    \n    Conv1 --> Kafka\n    Conv2 --> Kafka\n    LLM1 --> Kafka\n    LLM2 --> Kafka\n    \n    Kafka --> Search\n    Kafka --> Analytics\n    Kafka --> Notif\n    \n    Search --> ES\n    Analytics --> ClickHouse\n    \n    PG_Primary --> PG_Replica1\n    PG_Primary --> PG_Replica2",
+  "dataStorage": [
+    {
+      "store": "PostgreSQL 15 with Citus extension for horizontal sharding",
+      "type": "sql",
+      "justification": "Primary datastore for users, conversations, messages, and relationships. Citus enables horizontal sharding by user_id to handle billions of messages. JSONB support for flexible message metadata. Strong ACID guarantees ensure conversation consistency. Read replicas handle query load."
+    },
+    {
+      "store": "Redis Cluster",
+      "type": "cache",
+      "justification": "Multi-purpose: JWT session storage, rate limiting counters, conversation context caching, WebSocket connection metadata, and hot conversation cache. Sub-millisecond latency critical for rate limiting and session validation. Redis Cluster provides automatic sharding and replication."
+    },
+    {
+      "store": "Elasticsearch 8.x",
+      "type": "search",
+      "justification": "Full-text search across conversation history. Handles complex queries with filters, highlighting, and relevance scoring. Inverted indexes provide fast search across billions of messages. Can be extended with kNN for semantic search using embeddings."
+    },
+    {
+      "store": "Amazon S3 with CloudFront CDN",
+      "type": "blob",
+      "justification": "Stores uploaded files (images, documents), exported conversations, and shared conversation snapshots. S3 provides 99.999999999% durability, lifecycle policies for cost optimization, and versioning. CloudFront accelerates file delivery globally."
+    },
+    {
+      "store": "Apache Kafka",
+      "type": "queue",
+      "justification": "Event streaming backbone for async processing: analytics events, usage tracking, cost calculation, audit logs, and notification triggers. Kafka provides durable message storage, replay capability, and scales to millions of events per second. Decouples producers from consumers."
+    },
+    {
+      "store": "ClickHouse",
+      "type": "nosql",
+      "justification": "Time-series analytics database for usage metrics, cost tracking, and admin dashboards. Optimized for OLAP queries with aggregations across billions of rows. Columnar storage provides 10-100x compression. Real-time ingestion from Kafka."
+    }
+  ],
+  "apiDesign": [
+    {
+      "endpoint": "/api/v1/auth/register",
+      "method": "POST",
+      "description": "Register a new user account with email and password, returns JWT access and refresh tokens"
+    },
+    {
+      "endpoint": "/api/v1/auth/login",
+      "method": "POST",
+      "description": "Authenticate user credentials and issue JWT tokens with user tier information"
+    },
+    {
+      "endpoint": "/api/v1/conversations",
+      "method": "POST",
+      "description": "Create a new conversation thread, returns conversation_id and initial metadata"
+    },
+    {
+      "endpoint": "/api/v1/conversations/{conversation_id}",
+      "method": "GET",
+      "description": "Retrieve full conversation thread with all messages, supports pagination and filtering"
+    },
+    {
+      "endpoint": "/api/v1/conversations/{conversation_id}/messages",
+      "method": "POST",
+      "description": "Send a new message in a conversation, triggers LLM processing, returns message_id for tracking"
+    },
+    {
+      "endpoint": "/ws/v1/stream",
+      "method": "WS",
+      "description": "WebSocket endpoint for real-time bidirectional communication, streams LLM responses token-by-token, handles connection lifecycle"
+    },
+    {
+      "endpoint": "/api/v1/conversations/search",
+      "method": "GET",
+      "description": "Full-text search across user's conversation history with filters for date range, model, and tags"
+    },
+    {
+      "endpoint": "/api/v1/files/upload",
+      "method": "POST",
+      "description": "Upload files for multimodal input, supports images and documents up to 50MB, returns file_id and processing status"
+    },
+    {
+      "endpoint": "/api/v1/conversations/{conversation_id}/share",
+      "method": "POST",
+      "description": "Generate a public shareable link for a conversation with configurable expiration and privacy settings"
+    },
+    {
+      "endpoint": "/api/v1/models",
+      "method": "GET",
+      "description": "List available LLM models with capabilities, pricing, and context window information"
+    },
+    {
+      "endpoint": "/api/v1/users/me/usage",
+      "method": "GET",
+      "description": "Get current user's usage statistics, quota consumption, and rate limit status"
+    },
+    {
+      "endpoint": "/api/v1/admin/analytics/usage",
+      "method": "GET",
+      "description": "Admin endpoint for aggregated usage metrics, costs by model, and active user statistics"
+    },
+    {
+      "endpoint": "/api/v1/conversations/{conversation_id}",
+      "method": "DELETE",
+      "description": "Soft delete a conversation thread, marks as deleted but retains for recovery period"
+    }
+  ],
+  "scalabilityStrategy": "**Horizontal Scaling Approach:**\n\n1. **Stateless Services**: All application services (API Gateway, Conversation Service, LLM Gateway, Auth Service, WebSocket Manager) are stateless and containerized with Kubernetes. Auto-scaling policies based on CPU (70% threshold) and custom metrics (concurrent connections for WS Manager, queue depth for File Processing).\n\n2. **WebSocket Connection Distribution**: Each WebSocket Manager instance handles 10K concurrent connections. With 100K target per region, deploy 10+ instances with sticky session routing at the load balancer level using consistent hashing on user_id. Connection metadata stored in Redis allows any instance to route messages.\n\n3. **Database Sharding**: PostgreSQL with Citus extension shards data by user_id across 16 initial shards, expandable to 64+. Each shard handles ~1.25M users. Read replicas (3 per shard) distribute query load. Message tables partitioned by created_at (monthly) for efficient archival.\n\n4. **LLM Gateway Scaling**: Python FastAPI instances scaled based on request queue depth in Kafka. Each instance maintains connection pools to external LLM APIs (OpenAI, Anthropic) with circuit breakers. Geographic proximity routing to LLM endpoints reduces latency.\n\n5. **Caching Strategy**: Redis Cluster with 12 nodes (4 shards × 3 replicas) caches: conversation contexts (30min TTL), user sessions (24hr), rate limit counters (1hr sliding window), hot conversations (top 10% by access). Cache hit rate target: 85%+.\n\n6. **Multi-Region Deployment**: Deploy across 3 regions (US-East, EU-West, Asia-Pacific) with Route53 geo-routing. Each region handles 7M DAU. Cross-region PostgreSQL replication (async) for disaster recovery. Kafka MirrorMaker 2 replicates events for analytics aggregation.\n\n**Vertical Scaling Considerations:**\n\n- PostgreSQL instances: Start with r6g.4xlarge (16 vCPU, 128GB RAM), scale to r6g.8xlarge for primary. Read replicas on r6g.2xlarge.\n- Redis Cluster: r6g.xlarge nodes (4 vCPU, 32GB RAM per node).\n- LLM Gateway: CPU-optimized c6i.2xlarge for fast Python execution.\n- ClickHouse: Storage-optimized i3en.2xlarge for cost-effective analytics.\n\n**Capacity Planning for 500M messages/day**: ~5,800 msgs/sec sustained, 12K msgs/sec peak. Each LLM Gateway instance handles 50 concurrent requests × 20 regions × 10 instances = 10K concurrent LLM requests. Over-provision by 50% for traffic spikes and failover capacity.",
+  "tradeoffs": [
+    {
+      "decision": "WebSocket for real-time streaming vs Server-Sent Events (SSE)",
+      "pros": [
+        "Bidirectional communication allows client to cancel requests mid-stream",
+        "Lower latency for streaming tokens (no HTTP overhead per message)",
+        "Better for interactive features like typing indicators and presence",
+        "Single persistent connection reduces connection overhead"
+      ],
+      "cons": [
+        "More complex infrastructure with stateful connection management",
+        "Requires sticky sessions and connection state tracking in Redis",
+        "Harder to debug and monitor compared to stateless HTTP",
+        "Load balancer configuration more complex (TCP vs HTTP)",
+        "Higher memory consumption per connection on server side"
+      ]
+    },
+    {
+      "decision": "PostgreSQL with Citus sharding vs fully distributed database (Cassandra/DynamoDB)",
+      "pros": [
+        "Strong ACID guarantees ensure conversation consistency across multi-turn interactions",
+        "Complex relational queries for conversation threads, user relationships, and search",
+        "Mature ecosystem with excellent tooling, monitoring, and operational knowledge",
+        "JSONB support provides schema flexibility for message metadata without sacrificing SQL",
+        "Citus provides transparent sharding while maintaining PostgreSQL compatibility"
+      ],
+      "cons": [
+        "Harder to scale writes compared to eventually consistent NoSQL databases",
+        "Requires careful shard key selection (user_id) to avoid hot partitions",
+        "Cross-shard queries (e.g., admin analytics) are more expensive",
+        "Higher operational complexity for managing sharding compared to managed NoSQL",
+        "Potential single points of failure if primary shard goes down (mitigated with replicas)"
+      ]
+    },
+    {
+      "decision": "Python FastAPI for LLM Gateway vs Go/Java",
+      "pros": [
+        "Best ecosystem for LLM libraries (OpenAI, Anthropic, LangChain, transformers)",
+        "Native async/await support in FastAPI ideal for streaming responses",
+        "Rapid development and easy integration with ML/AI tooling",
+        "LangChain provides abstraction for multi-provider LLM orchestration",
+        "Python's expressiveness reduces code complexity for prompt engineering"
+      ],
+      "cons": [
+        "Lower raw throughput compared to Go or Java (GIL limitations)",
+        "Higher memory consumption per request (~50MB vs ~5MB for Go)",
+        "Slower cold start times if using serverless deployment",
+        "Requires more instances to achieve same throughput as compiled languages",
+        "Dependency management more fragile (pip vs Go modules)"
+      ]
+    },
+    {
+      "decision": "Kafka for event streaming vs direct database writes with triggers",
+      "pros": [
+        "Decouples message processing from analytics, allowing independent scaling",
+        "Event replay capability for backfilling analytics or debugging",
+        "Enables multiple consumers (analytics, search indexing, notifications) without coupling",
+        "Buffer for traffic spikes - prevents overwhelming downstream systems",
+        "Provides audit log for compliance and debugging"
+      ],
+      "cons": [
+        "Additional infrastructure complexity and operational overhead",
+        "Eventual consistency - analytics may lag real-time by seconds",
+        "Higher storage costs for event retention (30 days = ~15TB for 500M msgs/day)",
+        "Requires monitoring for consumer lag and rebalancing",
+        "Increases overall system latency for end-to-end event processing"
+      ]
+    },
+    {
+      "decision": "Multi-region active-active deployment vs active-passive",
+      "pros": [
+        "Lower latency for global users by serving from nearest region",
+        "Higher availability - no failover delay if region goes down",
+        "Better resource utilization - all regions handle traffic simultaneously",
+        "Enables geographic compliance (EU data stays in EU region)"
+      ],
+      "cons": [
+        "Complex data consistency challenges for global user state (sessions, rate limits)",
+        "Higher infrastructure costs running full stack in multiple regions",
+        "Cross-region latency for database replication can cause eventual consistency issues",
+        "More complex deployment and testing (must validate across all regions)",
+        "Potential for split-brain scenarios if network partitions occur"
+      ]
+    },
+    {
+      "decision": "Redis for rate limiting vs database-based rate limiting",
+      "pros": [
+        "Sub-millisecond latency critical for checking limits on every request",
+        "Atomic operations with Lua scripts prevent race conditions in token bucket algorithm",
+        "In-memory performance scales to millions of rate limit checks per second",
+        "TTL support automatically cleans up expired rate limit windows",
+        "Doesn't add load to primary transactional database"
+      ],
+      "cons": [
+        "Data loss risk if Redis instance fails (mitigated with Redis Cluster replication)",
+        "Higher cost per GB compared to disk-based storage",
+        "Requires separate infrastructure component to maintain and monitor",
+        "Complex to guarantee exactly-once semantics during failover scenarios",
+        "Memory constraints may require eviction policies that could lose rate limit state"
+      ]
+    }
+  ]
+}

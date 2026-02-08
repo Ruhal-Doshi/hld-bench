@@ -1,0 +1,73 @@
+sequenceDiagram
+    participant User
+    participant WS as WebSocket Manager
+    participant API as API Gateway
+    participant Auth as Auth Service
+    participant Conv as Conversation Service
+    participant LLM as LLM Gateway
+    participant Redis
+    participant PG as PostgreSQL
+    participant Kafka
+    participant ExtLLM as External LLM (OpenAI)
+    
+    User->>API: POST /api/v1/auth/login
+    API->>Auth: Validate credentials
+    Auth->>PG: Query user data
+    PG-->>Auth: User record + tier
+    Auth->>Redis: Store session (JWT)
+    Auth-->>API: JWT tokens
+    API-->>User: Access token + refresh token
+    
+    User->>API: POST /api/v1/conversations
+    API->>Auth: Validate JWT
+    Auth->>Redis: Check session
+    Redis-->>Auth: Session valid
+    API->>Conv: Create conversation
+    Conv->>PG: INSERT conversation
+    PG-->>Conv: conversation_id
+    Conv-->>User: conversation_id, metadata
+    
+    User->>WS: WebSocket connect /ws/v1/stream
+    WS->>Auth: Validate token
+    Auth->>Redis: Verify session
+    WS->>Redis: Store connection metadata
+    WS-->>User: Connection established
+    
+    User->>WS: Send message (via WebSocket)
+    WS->>API: Rate limit check
+    API->>Redis: Check user quota/rate
+    Redis-->>API: Allowed
+    WS->>Conv: Save user message
+    Conv->>PG: INSERT message
+    Conv->>Kafka: Publish message event
+    Conv-->>WS: message_id
+    
+    WS->>LLM: Forward message + context
+    LLM->>PG: Load conversation history
+    PG-->>LLM: Previous messages (context)
+    LLM->>Redis: Check cached context
+    LLM->>ExtLLM: Stream request with context
+    
+    loop Token-by-token streaming
+        ExtLLM-->>LLM: Token chunk
+        LLM->>LLM: Track cost
+        LLM-->>WS: Stream token
+        WS-->>User: Push token via WebSocket
+    end
+    
+    ExtLLM-->>LLM: Stream complete
+    LLM->>Conv: Save assistant response
+    Conv->>PG: INSERT assistant message
+    LLM->>Kafka: Publish completion event (cost, latency)
+    LLM->>Redis: Update usage metrics
+    LLM-->>WS: Completion signal
+    WS-->>User: End of message marker
+    
+    Kafka->>Analytics: Consume usage events
+    Analytics->>ClickHouse: Store metrics
+    
+    User->>API: GET /api/v1/conversations/search?q=example
+    API->>Search: Full-text search
+    Search->>Elasticsearch: Query
+    Elasticsearch-->>Search: Results
+    Search-->>User: Matching conversations

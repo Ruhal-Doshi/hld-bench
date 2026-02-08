@@ -1,0 +1,96 @@
+flowchart TD
+    subgraph ClientLayer["Client Layer"]
+        Web["Web App (Next.js/React)"]
+        Mobile["Mobile Web (PWA)"]
+    end
+
+    subgraph EdgeLayer["Edge / CDN Layer"]
+        CF["CloudFront CDN"]
+        WAF["AWS WAF"]
+    end
+
+    subgraph GatewayLayer["Gateway Layer"]
+        Kong1["Kong Gateway (Region US)"]
+        Kong2["Kong Gateway (Region EU)"]
+        RL["Rate Limiter (Redis Cluster)"]
+    end
+
+    subgraph CoreServices["Core Services (Kubernetes)"]
+        AuthSvc["Auth Service (Node.js)"]
+        ConvSvc["Conversation Service (FastAPI)"]
+        StreamGW["Streaming Gateway (Go)"]
+        LLMOrch["LLM Orchestrator (FastAPI + LiteLLM)"]
+        FileSvc["File Processing Service (Celery)"]
+        ShareSvc["Sharing Service (FastAPI)"]
+        AdminAPI["Admin Dashboard API (Express)"]
+    end
+
+    subgraph LLMBackends["LLM Backends"]
+        OpenAI["OpenAI API (GPT-4)"]
+        Anthropic["Anthropic API (Claude)"]
+        SelfHosted["Self-Hosted (vLLM on GPU)"]
+        Fallback["Fallback Model Pool"]
+    end
+
+    subgraph DataLayer["Data Storage Layer"]
+        PG["PostgreSQL (Citus Sharded)"]
+        Redis["Redis Cluster (Cache + Sessions)"]
+        ES["Elasticsearch (Search)"]
+        S3["S3 (File Storage)"]
+    end
+
+    subgraph EventLayer["Event and Analytics Layer"]
+        Kafka["Apache Kafka (MSK)"]
+        BillingSvc["Billing Service (Go)"]
+        ClickHouse["ClickHouse (Analytics)"]
+        Prometheus["Prometheus + Grafana"]
+    end
+
+    Web --> CF
+    Mobile --> CF
+    CF --> WAF
+    WAF --> Kong1
+    WAF --> Kong2
+    Kong1 --> RL
+    Kong2 --> RL
+
+    Kong1 --> AuthSvc
+    Kong1 --> ConvSvc
+    Kong1 --> StreamGW
+    Kong1 --> FileSvc
+    Kong1 --> ShareSvc
+    Kong2 --> AuthSvc
+    Kong2 --> ConvSvc
+    Kong2 --> StreamGW
+
+    AuthSvc --> PG
+    AuthSvc --> Redis
+    ConvSvc --> PG
+    ConvSvc --> Redis
+    ConvSvc --> Kafka
+
+    StreamGW --> LLMOrch
+    LLMOrch --> OpenAI
+    LLMOrch --> Anthropic
+    LLMOrch --> SelfHosted
+    LLMOrch --> Fallback
+    LLMOrch --> Redis
+    LLMOrch --> PG
+    LLMOrch --> Kafka
+
+    FileSvc --> S3
+    FileSvc --> Redis
+    ShareSvc --> PG
+    ShareSvc --> Redis
+
+    Kafka --> BillingSvc
+    Kafka --> ES
+    Kafka --> ClickHouse
+    BillingSvc --> PG
+    BillingSvc --> ClickHouse
+
+    AdminAPI --> ClickHouse
+    AdminAPI --> PG
+    AdminAPI --> Prometheus
+
+    ConvSvc --> ES

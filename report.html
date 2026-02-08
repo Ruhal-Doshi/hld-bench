@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HLD-Bench Report</title>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    securityLevel: 'loose',
+    themeVariables: {
+      fontSize: '14px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+      darkMode: true,
+      background: '#161b22',
+      primaryColor: '#1f6feb',
+      primaryTextColor: '#e6edf3',
+      primaryBorderColor: '#58a6ff',
+      lineColor: '#8b949e',
+      secondaryColor: '#238636',
+      tertiaryColor: '#2d333b',
+      nodeTextColor: '#e6edf3',
+      mainBkg: '#1f6feb',
+      nodeBorder: '#58a6ff',
+      clusterBg: '#0d1117',
+      clusterBorder: '#30363d',
+      titleColor: '#e6edf3',
+      edgeLabelBackground: '#161b22',
+      actorBkg: '#1f6feb',
+      actorTextColor: '#e6edf3',
+      actorBorder: '#58a6ff',
+      actorLineColor: '#8b949e',
+      signalColor: '#e6edf3',
+      signalTextColor: '#e6edf3',
+      labelBoxBkgColor: '#161b22',
+      labelBoxBorderColor: '#30363d',
+      labelTextColor: '#e6edf3',
+      loopTextColor: '#e6edf3',
+      noteBkgColor: '#2d333b',
+      noteTextColor: '#e6edf3',
+      noteBorderColor: '#30363d',
+    }
+  });
+  document.addEventListener('DOMContentLoaded', async () => {
+    const diagrams = document.querySelectorAll('.mermaid[data-src]');
+    await Promise.all([...diagrams].map(async (el) => {
+      try {
+        const resp = await fetch(el.getAttribute('data-src'));
+        if (!resp.ok) throw new Error(resp.statusText);
+        el.setAttribute('data-raw', await resp.text());
+      } catch (e) {
+        el.setAttribute('data-raw', '');
+        el.innerHTML = '<p style="color:#f85149;padding:1rem">Failed to load diagram. Use <code>pnpm run bench serve</code> to view.</p>';
+        console.error('Failed to load', el.getAttribute('data-src'), e);
+      }
+    }));
+    // Render each diagram individually so one failure doesn't block others
+    for (const el of diagrams) {
+      const raw = el.getAttribute('data-raw');
+      if (!raw) continue;
+      el.textContent = raw;
+      try {
+        await mermaid.run({ nodes: [el] });
+      } catch (err) {
+        console.warn('Mermaid render failed for', el.getAttribute('data-src'), err);
+        showFallback(el, raw);
+      }
+    }
+    // Also catch diagrams where mermaid silently inserted an error SVG
+    for (const el of diagrams) {
+      if (el.getAttribute('data-raw') && el.innerHTML.includes('Syntax error')) {
+        showFallback(el, el.getAttribute('data-raw'));
+      }
+    }
+  });
+
+  function showFallback(el, raw) {
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'background:#161b22;color:#8b949e;padding:1rem;border-radius:6px;overflow-x:auto;font-size:0.8rem;white-space:pre-wrap';
+    pre.textContent = raw;
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:0.5rem;margin-top:0.5rem';
+    const copyBtn = document.createElement('button');
+    copyBtn.textContent = 'Copy source';
+    copyBtn.style.cssText = 'padding:0.3rem 0.8rem;background:#30363d;color:#e6edf3;border:1px solid #484f58;border-radius:4px;cursor:pointer;font-size:0.8rem';
+    copyBtn.addEventListener('click', () => { navigator.clipboard.writeText(raw); copyBtn.textContent = 'Copied!'; });
+    const liveLink = document.createElement('a');
+    liveLink.href = 'https://mermaid.live';
+    liveLink.target = '_blank';
+    liveLink.rel = 'noopener';
+    liveLink.textContent = 'Open mermaid.live';
+    liveLink.style.cssText = 'padding:0.3rem 0.8rem;background:#1f6feb33;color:#58a6ff;border:1px solid #1f6feb55;border-radius:4px;text-decoration:none;font-size:0.8rem';
+    btnRow.append(copyBtn, liveLink);
+    el.replaceChildren(pre, btnRow);
+  }
+</script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --orange: #d29922; --red: #f85149;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; }
+  h1 { font-size: 2rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--text-muted); margin-bottom: 2rem; font-size: 0.95rem; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2.5rem; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+  .stat-card .label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-card .value { font-size: 1.5rem; font-weight: 600; margin-top: 0.25rem; }
+  .problem-section { margin-bottom: 3rem; }
+  .problem-title { font-size: 1.4rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 0; overflow-x: auto; }
+  .tab { padding: 0.6rem 1.2rem; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; font-size: 0.9rem; white-space: nowrap; transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; background: var(--surface); border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 1.5rem; }
+  .tab-content.active { display: block; }
+
+  /* Content */
+  .meta-bar { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; font-size: 0.85rem; color: var(--text-muted); }
+  .meta-bar span { display: inline-flex; align-items: center; gap: 0.3rem; }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 500; }
+  .badge-provider { background: #1f6feb33; color: var(--accent); }
+
+  .section { margin-bottom: 1.5rem; }
+  .section h3 { font-size: 1rem; margin-bottom: 0.5rem; color: var(--accent); }
+  .section h4 { font-size: 0.9rem; margin-bottom: 0.4rem; color: var(--text); }
+  .section p, .section li { font-size: 0.9rem; color: var(--text); }
+  .section ul { padding-left: 1.5rem; }
+  .section li { margin-bottom: 0.2rem; }
+
+  .mermaid { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 1rem; margin: 0.75rem 0; overflow-x: auto; }
+  .mermaid-warning { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+  .mermaid-warning a { color: var(--accent); text-decoration: none; }
+  .mermaid-warning a:hover { text-decoration: underline; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 0.5rem 0; }
+  th { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 2px solid var(--border); color: var(--text-muted); font-weight: 600; }
+  td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  code { background: var(--bg); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
+
+  .tradeoff { background: var(--bg); border-radius: 6px; padding: 1rem; margin-bottom: 0.75rem; }
+  .tradeoff h4 { margin-bottom: 0.5rem; }
+  .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .pros li { color: var(--green); }
+  .cons li { color: var(--orange); }
+  .pros li span, .cons li span { color: var(--text); }
+
+  .overview-text { font-size: 0.95rem; line-height: 1.7; }
+
+  /* Comparison table */
+  .compare-table { margin-top: 1.5rem; }
+  .compare-table th { position: sticky; top: 0; background: var(--surface); }
+
+  @media (max-width: 768px) {
+    .pros-cons { grid-template-columns: 1fr; }
+    .container { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>HLD-Bench Report</h1>
+  <p class="subtitle">Generated on 2/8/2026, 2:33:02 PM &middot; 7 run(s) across 1 problem(s)</p>
+
+  <div class="summary-grid">
+    <div class="stat-card"><div class="label">Total Runs</div><div class="value">7</div></div>
+    <div class="stat-card"><div class="label">Problems</div><div class="value">1</div></div>
+    <div class="stat-card"><div class="label">Models</div><div class="value">7</div></div>
+    <div class="stat-card"><div class="label">Providers</div><div class="value">3</div></div>
+  </div>
+
+
+  <div class="problem-section">
+    <h2 class="problem-title">ChatGPT-like Conversational AI Web Application - High-Level Design</h2>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab(this, 'design-chatgpt', 0)">claude-opus-4-6 <span class="badge badge-provider">anthropic</span></button>
+      <button class="tab" onclick="switchTab(this, 'design-chatgpt', 1)">claude-sonnet-4-5 <span class="badge badge-provider">anthropic</span></button>
+      <button class="tab" onclick="switchTab(this, 'design-chatgpt', 2)">gemini-3-flash-preview <span class="badge badge-provider">gemini</span></button>
+      <button class="tab" onclick="switchTab(this, 'design-chatgpt', 3)">gemini-3-pro-preview <span class="badge badge-provider">gemini</span></button>
+      <button class="tab" onclick="switchTab(this, 'design-chatgpt', 4)">gpt-5 <span class="badge badge-provider">openai</span></button>
+      <button class="tab" onclick="switchTab(this, 'design-chatgpt', 5)">gpt-5-mini <span class="badge badge-provider">openai</span></button>
+      <button class="tab" onclick="switchTab(this, 'design-chatgpt', 6)">gpt-5.2 <span class="badge badge-provider">openai</span></button>
+    </div>
+    
+    <div id="design-chatgpt-0" class="tab-content active">
+      <div class="meta-bar">
+        <span>⏱ 355.8s</span>
+        <span>📅 2/8/2026, 2:32:04 PM</span>
+        <span>📁 design-chatgpt-claude-opus-4-6</span>
+      </div>
+
+      <div class="section">
+        <h3>Overview</h3>
+        <p class="overview-text">This system is a large-scale conversational AI platform serving 20 million daily active users generating 500 million messages per day. The architecture follows a microservices pattern with clear separation between the real-time streaming layer, conversation management, LLM orchestration, and supporting services. The core design centers on a WebSocket-based streaming gateway that delivers token-by-token responses with sub-500ms time-to-first-token, backed by an LLM orchestration layer that abstracts multiple model backends (OpenAI, Anthropic, self-hosted) with automatic failover. Conversations are persisted in a sharded PostgreSQL cluster for immediate consistency, with Redis caching for hot conversation context, and S3 for file/multimodal uploads.
+
+The system is designed for multi-region deployment with regional WebSocket gateways, global CDN for static assets, and a robust rate-limiting and billing pipeline that tracks per-request token costs. Key architectural decisions include using Server-Sent Events (SSE) over WebSocket for streaming simplicity, CQRS for separating write-heavy message ingestion from read-heavy history/search workloads, and an event-driven architecture via Kafka for decoupling billing, analytics, and audit concerns from the critical path. The admin dashboard is powered by a dedicated analytics pipeline built on ClickHouse for real-time usage monitoring and cost attribution.</p>
+      </div>
+
+      <div class="section">
+        <h3>Requirements</h3>
+        <div class="pros-cons">
+          <div>
+            <h4>Functional</h4>
+            <ul><li>User registration, authentication (email, OAuth), and session management with JWT tokens</li><li>Create, continue, and manage multi-turn conversation threads with full context retention</li><li>Real-time streaming of LLM responses token-by-token to the client</li><li>Persistent conversation history with full-text search and folder/tag organization</li><li>Model selection allowing users to choose between different LLM backends per conversation</li><li>File upload support for images, PDFs, and documents with multimodal input to LLMs</li><li>Share conversations via unique public links with optional expiration</li><li>Admin dashboard for monitoring usage metrics, costs, active users, and system health</li><li>Rate limiting and tiered usage quotas (free, plus, enterprise) with enforcement</li><li>Markdown rendering support in responses including code blocks, tables, LaTeX, and syntax highlighting</li></ul>
+          </div>
+          <div>
+            <h4>Non-Functional</h4>
+            <ul><li>Time to first token must be under 500ms for streaming responses</li><li>Support at least 100K concurrent WebSocket/SSE connections per region</li><li>Conversation history must be durable with immediate consistency (no eventual consistency for user-facing reads)</li><li>Handle LLM backend failures with automatic failover to alternative providers within 2 seconds</li><li>Per-request cost tracking for accurate billing with less than 0.1% error rate</li><li>99.95% availability SLA for the overall platform</li><li>Horizontal scalability to handle 500M messages/day (~5,800 messages/sec average, 20K+ peak)</li><li>P99 API response latency under 200ms for non-LLM endpoints (history, search, auth)</li><li>Data encryption at rest and in transit, SOC2 compliance readiness</li><li>Multi-region deployment with data residency compliance for EU/US users</li><li>Graceful degradation under load — queue overflow should return informative wait messages rather than errors</li></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Architecture Diagram</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-claude-opus-4-6/architecture.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Components</h3>
+        <table>
+          <thead><tr><th>Component</th><th>Technology</th><th>Responsibility</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>API Gateway</strong></td><td><code>Kong Gateway (on Kubernetes)</code></td><td>Entry point for all client requests. Handles TLS termination, request routing, authentication verification, rate limiting enforcement, and load balancing across backend services.</td><td>Kong provides built-in rate limiting, JWT validation, request transformation, and plugin ecosystem. It handles both HTTP and WebSocket upgrade requests, supports declarative config via Kubernetes CRDs, and scales horizontally. Preferred over AWS API Gateway for lower latency and more control over WebSocket handling.</td></tr><tr><td><strong>Streaming Gateway</strong></td><td><code>Custom Go service with nhooyr/websocket</code></td><td>Manages long-lived SSE/WebSocket connections for real-time token streaming from LLM backends to clients. Handles connection lifecycle, heartbeats, backpressure, and reconnection.</td><td>Go excels at handling massive concurrent connections with minimal memory overhead (goroutines use ~4KB vs threads). A custom service allows precise control over backpressure, connection draining, and graceful failover. Each instance can handle 50K+ concurrent connections, needing only 2-3 instances per region for 100K target.</td></tr><tr><td><strong>Auth Service</strong></td><td><code>Node.js with Passport.js + Redis session store</code></td><td>User registration, login (email/password, Google OAuth, GitHub OAuth), JWT issuance and refresh, session management, and password reset flows.</td><td>Passport.js has mature OAuth provider integrations. Node.js is well-suited for I/O-bound auth workflows. Redis stores refresh tokens and session blacklists for O(1) lookups. JWTs are short-lived (15min) with Redis-backed refresh tokens for revocation capability.</td></tr><tr><td><strong>Conversation Service</strong></td><td><code>Python (FastAPI)</code></td><td>Core business logic for creating conversations, appending messages, managing conversation metadata (titles, folders, tags), and serving conversation history with pagination.</td><td>FastAPI provides async support, automatic OpenAPI docs, and excellent Python ecosystem integration for ML/AI tooling. Python aligns with the broader AI/ML ecosystem making it easy to integrate tokenizers, prompt engineering libraries, and model-specific utilities.</td></tr><tr><td><strong>LLM Orchestrator</strong></td><td><code>Python (FastAPI) with LiteLLM</code></td><td>Abstracts multiple LLM backends, handles model routing based on user selection, manages prompt assembly with conversation context, implements retry/failover logic, and streams tokens back to the Streaming Gateway.</td><td>LiteLLM provides a unified interface to 100+ LLM providers (OpenAI, Anthropic, Cohere, self-hosted vLLM). FastAPI's async streaming support enables efficient token forwarding. The orchestrator implements circuit breaker patterns per backend and automatic failover when a provider returns errors or exceeds latency thresholds.</td></tr><tr><td><strong>File Processing Service</strong></td><td><code>Python with Celery workers</code></td><td>Handles file upload, validation, virus scanning, format conversion, image resizing, OCR for documents, and preparing multimodal inputs for LLM consumption.</td><td>File processing is CPU-intensive and variable in duration — Celery workers can scale independently. Python has excellent libraries for image processing (Pillow), PDF extraction (PyMuPDF), and OCR (Tesseract). Workers pull from a Redis-backed task queue for reliable processing.</td></tr><tr><td><strong>Search Service</strong></td><td><code>Elasticsearch 8.x</code></td><td>Full-text search across conversation history, semantic search for finding relevant past conversations, and powering the organization/filtering UI.</td><td>Elasticsearch provides fast full-text search with relevance scoring, supports nested document structures ideal for conversations with messages, and offers built-in vector search (kNN) for semantic search. The inverted index is highly optimized for the search-heavy read pattern of conversation history.</td></tr><tr><td><strong>Rate Limiter &amp; Quota Service</strong></td><td><code>Redis Cluster with Lua scripts</code></td><td>Enforces per-user, per-tier rate limits (requests/min, tokens/day), tracks usage quotas, and signals the API gateway to throttle or reject requests.</td><td>Redis provides sub-millisecond rate limit checks using sliding window counters implemented via Lua scripts for atomicity. Redis Cluster enables horizontal scaling. Token bucket and sliding window algorithms are implemented for different rate limiting needs (burst vs sustained).</td></tr><tr><td><strong>Billing &amp; Cost Tracking Service</strong></td><td><code>Go service consuming from Kafka</code></td><td>Records per-request token usage and costs, aggregates billing data per user/organization, generates invoices, and feeds cost data to the admin dashboard.</td><td>Go provides the performance needed for high-throughput event processing. Kafka consumption decouples billing from the critical request path — if billing is slow, it doesn't affect user experience. Go's strong typing and low GC pauses ensure accurate, reliable cost aggregation at 500M messages/day.</td></tr><tr><td><strong>Admin Dashboard Backend</strong></td><td><code>Node.js (Express) + ClickHouse queries</code></td><td>Serves aggregated analytics, real-time usage metrics, cost reports, user management, system health monitoring, and model performance dashboards.</td><td>Node.js is efficient for the I/O-bound dashboard API pattern. ClickHouse provides sub-second analytical queries over billions of rows for real-time dashboards. The admin backend is a lightweight API layer that translates dashboard queries into optimized ClickHouse SQL.</td></tr><tr><td><strong>CDN &amp; Frontend</strong></td><td><code>CloudFront CDN + Next.js (React)</code></td><td>Serves the React-based SPA, handles static assets, and provides edge caching for shared conversation pages.</td><td>Next.js provides SSR for shared conversation pages (SEO, social previews), static generation for marketing pages, and CSR for the interactive chat UI. CloudFront provides global edge caching with ~20ms latency to users worldwide. React's ecosystem has excellent Markdown rendering libraries (react-markdown, react-syntax-highlighter).</td></tr><tr><td><strong>Event Bus</strong></td><td><code>Apache Kafka (MSK)</code></td><td>Decouples services by publishing domain events (message_created, conversation_shared, tokens_consumed) for downstream consumers like billing, analytics, search indexing, and notifications.</td><td>Kafka handles the 500M+ events/day throughput with ease, provides exactly-once semantics for billing accuracy, supports multiple consumer groups (billing, analytics, search indexer), and offers configurable retention for replay capability. MSK reduces operational burden.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Data Flow</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-claude-opus-4-6/data-flow.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Data Storage</h3>
+        <table>
+          <thead><tr><th>Store</th><th>Type</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>PostgreSQL (Citus)</strong></td><td><code>sql</code></td><td>Primary data store for users, conversations, messages, and billing records. Citus extension enables horizontal sharding by user_id, distributing the 500M messages/day write load across multiple nodes while maintaining strong consistency and ACID transactions within a user's data. Immediate consistency requirement rules out eventually-consistent NoSQL options. Sharding by user_id ensures all conversation data for a user is co-located for efficient joins and queries.</td></tr><tr><td><strong>Redis Cluster</strong></td><td><code>cache</code></td><td>Multi-purpose caching layer: (1) Conversation context cache — stores the last N messages of active conversations to avoid DB reads on every LLM request, reducing P99 latency. (2) Session/JWT blacklist store for auth. (3) Rate limiting counters with atomic Lua scripts. (4) Celery task broker for file processing. Redis Cluster provides automatic partitioning across 6+ nodes with built-in failover.</td></tr><tr><td><strong>Elasticsearch 8.x</strong></td><td><code>search</code></td><td>Powers full-text search across conversation history with BM25 relevance scoring and supports vector search (kNN) for semantic similarity. Conversations are indexed asynchronously via Kafka consumers, so search indexing doesn't block the critical write path. Supports nested documents for conversation-message hierarchy and faceted filtering by date, model, folder.</td></tr><tr><td><strong>Amazon S3</strong></td><td><code>blob</code></td><td>Stores uploaded files (images, PDFs, documents) and conversation export archives. S3 provides 11 nines of durability, lifecycle policies for cost optimization (move old files to Glacier), and presigned URLs for secure direct client uploads. Multipart upload support handles large files efficiently.</td></tr><tr><td><strong>Apache Kafka (MSK)</strong></td><td><code>queue</code></td><td>Event streaming backbone carrying domain events (message_created, tokens_consumed, file_uploaded, conversation_shared) to downstream consumers. Kafka's partitioned log model supports parallel consumption by billing, search indexer, and analytics pipelines independently. At 500M messages/day, Kafka's throughput (millions of msgs/sec per cluster) provides massive headroom. Exactly-once semantics ensure billing accuracy.</td></tr><tr><td><strong>ClickHouse</strong></td><td><code>sql</code></td><td>Columnar OLAP database for real-time analytics powering the admin dashboard. Handles aggregation queries over billions of events (messages, token usage, costs) with sub-second response times. MergeTree engine provides efficient time-series storage with automatic data compaction. Chosen over Redshift for lower latency on interactive queries and over Druid for simpler operations.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>API Design</h3>
+        <table>
+          <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody><tr><td><code>POST</code></td><td><code>/api/v1/auth/login</code></td><td>Authenticate user with email/password or OAuth token. Returns short-lived JWT access token (15min) and long-lived refresh token. Sets secure httpOnly cookie for refresh token.</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/auth/refresh</code></td><td>Exchange a valid refresh token for a new JWT access token. Implements refresh token rotation — old token is invalidated in Redis upon use.</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/conversations</code></td><td>Create a new conversation thread. Accepts optional model selection, system prompt, and folder assignment. Returns conversation_id and initial metadata.</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/conversations</code></td><td>List user's conversations with pagination, filtering (by folder, date range, model), and sorting. Returns conversation metadata including title, last message timestamp, message count, and model used.</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/conversations/{conversation_id}/messages</code></td><td>Send a new user message to a conversation. Triggers LLM completion. Returns message_id and a stream_url for the client to connect to for receiving the streamed response. Accepts optional file attachments by reference (file_ids from upload).</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/conversations/{conversation_id}/messages</code></td><td>Retrieve paginated message history for a conversation. Supports cursor-based pagination (before/after message_id). Returns messages with role, content, timestamp, token count, and model info.</td></tr><tr><td><code>WS</code></td><td><code>/api/v1/stream/{message_id}</code></td><td>Server-Sent Events (SSE) endpoint for streaming LLM response tokens. Client connects after sending a message. Receives token-by-token events, metadata events (model, token count), and a final done event with complete message and usage stats.</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/files/upload</code></td><td>Upload a file (image, PDF, document) for use in conversations. Returns a presigned S3 URL for direct upload and a file_id for referencing in messages. Validates file type and size limits per user tier.</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/conversations/{conversation_id}/share</code></td><td>Generate a public sharing link for a conversation. Accepts optional expiration time and whether to include future messages. Returns a unique share URL that can be accessed without authentication.</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/search</code></td><td>Full-text search across user's conversation history. Accepts query string, filters (date range, model, folder), and pagination. Returns matching conversations and message snippets with highlighted matches.</td></tr><tr><td><code>PATCH</code></td><td><code>/api/v1/conversations/{conversation_id}</code></td><td>Update conversation metadata including title, folder assignment, tags, pinned status, and archive status. Supports partial updates.</td></tr><tr><td><code>DELETE</code></td><td><code>/api/v1/conversations/{conversation_id}</code></td><td>Soft-delete a conversation and all its messages. Data is retained for 30 days before permanent deletion. Triggers cleanup of associated search index entries and cached context.</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/user/usage</code></td><td>Retrieve current user's usage statistics including tokens consumed today/this month, message count, rate limit status, and quota remaining for their tier.</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/admin/dashboard/metrics</code></td><td>Admin-only endpoint returning aggregated platform metrics: DAU, messages/hour, token costs by model, error rates, P99 latencies, active connections, and top users by usage. Powered by ClickHouse queries.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Scalability Strategy</h3>
+        <p>The system employs a multi-layered horizontal scaling strategy designed to handle 20M DAU and 500M messages/day with significant headroom:
+
+**Compute Scaling (Kubernetes):** All core services run on Kubernetes (EKS) with Horizontal Pod Autoscaler (HPA) based on CPU, memory, and custom metrics (active connections for Streaming Gateway, queue depth for File Processing). The Streaming Gateway scales based on active WebSocket connections with a target of 40K connections per pod (Go's goroutine efficiency allows this). The LLM Orchestrator scales based on in-flight requests to LLM backends.
+
+**Database Scaling (Citus Sharded PostgreSQL):** Conversations and messages are sharded by user_id using Citus, distributing data across 32+ worker nodes. This ensures all data for a single user is co-located (avoiding cross-shard queries) while distributing the 500M daily message writes evenly. Read replicas per shard handle read-heavy workloads (conversation history browsing). Connection pooling via PgBouncer (256 connections per pool) prevents connection exhaustion.
+
+**Caching Strategy:** Redis Cluster with 12+ nodes provides the caching layer. Active conversation contexts (last 10 messages) are cached with 1-hour TTL, eliminating ~80% of database reads for the hot path (LLM context assembly). Cache-aside pattern with write-through for conversation metadata ensures consistency.
+
+**Event Processing Scaling:** Kafka topics are partitioned by user_id (128 partitions per topic), allowing consumer groups to scale horizontally. Billing consumers run 32 instances processing events in parallel. Search indexer runs 16 instances with bulk indexing to Elasticsearch.
+
+**Multi-Region Deployment:** The system deploys in US-East, US-West, and EU-West regions. Each region has its own Streaming Gateway fleet, Kong Gateway, and Redis cache. PostgreSQL uses Citus with the primary write cluster in one region and fast read replicas in others. For users requiring data residency (EU), a fully independent EU cluster is maintained. Global traffic routing via Route53 latency-based routing directs users to the nearest region.
+
+**LLM Backend Scaling:** The LLM Orchestrator implements a weighted round-robin across multiple API keys per provider, connection pooling to self-hosted vLLM instances (which auto-scale GPU nodes based on queue depth), and circuit breakers per backend. Self-hosted vLLM runs on p4d.24xlarge instances with auto-scaling groups targeting 70% GPU utilization.
+
+**CDN and Static Scaling:** CloudFront serves all static assets and SSR pages from 400+ edge locations. Shared conversation pages are cached at the edge with 5-minute TTL and cache invalidation on update.
+
+**Graceful Degradation:** Under extreme load, the system implements progressive degradation: (1) reduce max context window length, (2) disable search indexing temporarily, (3) queue non-streaming requests, (4) serve cached responses for identical recent queries, (5) display wait queue UI rather than errors.</p>
+      </div>
+
+      <div class="section">
+        <h3>Trade-offs</h3>
+        
+        <div class="tradeoff">
+          <h4>SSE (Server-Sent Events) for streaming instead of pure WebSocket</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>SSE works over standard HTTP/2 — no special proxy configuration needed, works through all CDNs and load balancers</span></li><li>✓ <span>Automatic reconnection built into the EventSource API with last-event-id support</span></li><li>✓ <span>Simpler server implementation — unidirectional stream matches the LLM response pattern</span></li><li>✓ <span>Better compatibility with HTTP-based auth (cookies, headers) without custom handshake logic</span></li><li>✓ <span>Easier to load balance since connections are standard HTTP</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Unidirectional — cannot send client messages over the same connection (requires separate POST requests)</span></li><li>✗ <span>Limited to ~6 concurrent connections per domain in HTTP/1.1 (mitigated by HTTP/2 multiplexing)</span></li><li>✗ <span>No binary frame support — all data must be text-encoded (acceptable for token streaming)</span></li><li>✗ <span>Some older corporate proxies may buffer SSE events (mitigated by including periodic comments as keep-alive)</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>PostgreSQL with Citus sharding instead of NoSQL (DynamoDB/Cassandra)</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Strong consistency guarantees satisfy the immediate consistency requirement for conversation history</span></li><li>✓ <span>SQL expressiveness enables complex queries for search, filtering, and admin analytics without separate ETL</span></li><li>✓ <span>ACID transactions ensure message ordering and conversation integrity</span></li><li>✓ <span>Citus provides horizontal scaling while preserving PostgreSQL's full feature set (JSONB, CTEs, window functions)</span></li><li>✓ <span>Existing team expertise with PostgreSQL reduces operational risk</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Cross-shard queries (e.g., global admin analytics) are more expensive than single-shard queries</span></li><li>✗ <span>Schema migrations on sharded tables require careful coordination</span></li><li>✗ <span>Higher operational complexity compared to fully managed DynamoDB</span></li><li>✗ <span>Connection management requires PgBouncer pooling layer adding another component</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Kafka as event bus instead of simpler alternatives (RabbitMQ, SQS)</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Supports multiple independent consumer groups — billing, search, analytics all consume the same events</span></li><li>✓ <span>Message replay capability enables reprocessing if a consumer fails or needs reindexing</span></li><li>✓ <span>Exactly-once semantics (with idempotent producers) critical for billing accuracy</span></li><li>✓ <span>Partitioned log model handles 500M+ events/day with low latency</span></li><li>✓ <span>MSK (managed) reduces operational overhead</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Higher complexity than SQS/RabbitMQ — requires understanding of partitions, consumer groups, offsets</span></li><li>✗ <span>Minimum 3-broker cluster even for dev/staging environments increases infrastructure cost</span></li><li>✗ <span>Message ordering only guaranteed within a partition (mitigated by partitioning by user_id)</span></li><li>✗ <span>Consumer lag monitoring and rebalancing require operational attention</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>LiteLLM as the unified LLM abstraction layer</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Single interface to 100+ LLM providers reduces integration code significantly</span></li><li>✓ <span>Built-in retry logic, streaming support, and token counting per provider</span></li><li>✓ <span>Easy to add new model backends without changing orchestration code</span></li><li>✓ <span>Active open-source community with frequent updates for new models</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Additional abstraction layer adds latency (~5-10ms) to every LLM call</span></li><li>✗ <span>May not expose provider-specific optimizations or features immediately</span></li><li>✗ <span>Dependency on third-party library for critical path — must pin versions carefully</span></li><li>✗ <span>Custom failover logic still needed on top of LiteLLM's built-in retries</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Separate Streaming Gateway service (Go) from Conversation Service (Python)</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Go handles 50K+ concurrent connections per instance with minimal memory — dramatically reduces infrastructure cost for the connection-heavy streaming workload</span></li><li>✓ <span>Independent scaling — streaming connections scale differently from CRUD API operations</span></li><li>✓ <span>Fault isolation — a crash in conversation logic doesn't drop active streams</span></li><li>✓ <span>Go's deterministic low-latency GC prevents stream stuttering</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Two services to maintain for what is conceptually one user action (send message + receive stream)</span></li><li>✗ <span>Coordination complexity — the Conversation Service must signal the Streaming Gateway when to start streaming</span></li><li>✗ <span>Different programming languages increase team skill requirements</span></li><li>✗ <span>Additional network hop between Conversation Service and Streaming Gateway adds ~2ms latency</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>ClickHouse for analytics instead of extending PostgreSQL or using a data warehouse</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Columnar storage provides 10-100x faster analytical queries compared to row-based PostgreSQL</span></li><li>✓ <span>Sub-second query performance on billions of rows enables real-time admin dashboards</span></li><li>✓ <span>Excellent compression (10-20x) reduces storage costs for high-volume event data</span></li><li>✓ <span>Native support for time-series aggregations and materialized views for pre-computed metrics</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Another database system to operate and monitor</span></li><li>✗ <span>Not suitable for transactional workloads — purely append-optimized</span></li><li>✗ <span>Limited UPDATE/DELETE capabilities make data corrections cumbersome</span></li><li>✗ <span>Requires separate data pipeline from Kafka to ingest events</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Soft-delete conversations with 30-day retention instead of immediate hard delete</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Users can recover accidentally deleted conversations within the retention window</span></li><li>✓ <span>Simplifies billing audits — all data is available for the billing period</span></li><li>✓ <span>Background cleanup job can batch-delete efficiently during off-peak hours</span></li><li>✓ <span>Compliance teams can review data before permanent deletion if needed</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Increases storage costs — deleted data occupies space for 30 days</span></li><li>✗ <span>All queries must filter on is_deleted flag adding minor overhead</span></li><li>✗ <span>GDPR right-to-erasure may require faster hard deletion for EU users — requires a separate expedited deletion pipeline</span></li><li>✗ <span>Search index must also handle soft-delete filtering</span></li></ul></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="design-chatgpt-1" class="tab-content">
+      <div class="meta-bar">
+        <span>⏱ 342.8s</span>
+        <span>📅 2/8/2026, 2:24:03 PM</span>
+        <span>📁 design-chatgpt-claude-sonnet-4-5</span>
+      </div>
+
+      <div class="section">
+        <h3>Overview</h3>
+        <p class="overview-text">This system design outlines a globally distributed, highly scalable conversational AI platform capable of serving 20 million daily active users with 500 million messages per day. The architecture employs a microservices approach with dedicated services for authentication, conversation management, real-time streaming, and LLM orchestration. The design emphasizes low-latency streaming responses (sub-500ms time to first token), horizontal scalability to support 100K+ concurrent WebSocket connections per region, and robust fault tolerance with automatic LLM backend failover.
+
+The system leverages a multi-region deployment with geographic load balancing, employs PostgreSQL with read replicas for durable conversation storage, Redis for session management and caching, and Kafka for asynchronous event processing. A dedicated LLM Gateway service abstracts multiple LLM providers (OpenAI, Anthropic, custom models), implements intelligent routing, rate limiting, and cost tracking. Real-time bidirectional communication is handled via WebSocket connections through a scalable connection manager, while a CDN delivers static assets and cached content globally.</p>
+      </div>
+
+      <div class="section">
+        <h3>Requirements</h3>
+        <div class="pros-cons">
+          <div>
+            <h4>Functional</h4>
+            <ul><li>User registration, login, and session management with JWT tokens</li><li>Create, read, update, and delete conversation threads</li><li>Multi-turn conversations with full context retention across messages</li><li>Real-time streaming of LLM responses token-by-token via WebSocket</li><li>Support for multiple LLM backends with user-selectable models</li><li>Conversation history search and organization (folders, tags, timestamps)</li><li>File upload and multimodal input processing (images, PDFs, documents)</li><li>Generate shareable public links for conversations with privacy controls</li><li>Markdown rendering support including code syntax highlighting</li><li>Admin dashboard for usage analytics, cost monitoring, and user management</li><li>Rate limiting based on user tier (free, pro, enterprise)</li><li>Usage quota enforcement and billing integration</li></ul>
+          </div>
+          <div>
+            <h4>Non-Functional</h4>
+            <ul><li>Support 20 million daily active users and 500 million messages/day</li><li>Time to first token (TTFT) must be under 500ms</li><li>Handle 100K+ concurrent WebSocket connections per region</li><li>99.9% availability with automatic failover for LLM backend failures</li><li>Conversation data must be immediately consistent and durable</li><li>Horizontal scalability for all stateless services</li><li>Geographic distribution across multiple regions for low latency</li><li>Per-request cost tracking with 99.99% accuracy for billing</li><li>Support message throughput of 5,800 messages/second sustained</li><li>Data retention for at least 90 days with archival for older conversations</li><li>Security compliance (encryption at rest and in transit, GDPR, SOC2)</li></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Architecture Diagram</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-claude-sonnet-4-5/architecture.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Components</h3>
+        <table>
+          <thead><tr><th>Component</th><th>Technology</th><th>Responsibility</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>API Gateway</strong></td><td><code>Kong Gateway with OpenResty (Nginx + Lua)</code></td><td>Single entry point for all client requests; handles routing, authentication validation, rate limiting, request/response transformation, and SSL termination</td><td>Kong provides high-performance reverse proxy with built-in plugins for authentication, rate limiting, logging, and circuit breaking. Handles 10K+ RPS per instance with horizontal scalability and proven in production at scale.</td></tr><tr><td><strong>Authentication Service</strong></td><td><code>Node.js with Passport.js + Auth0 for identity management</code></td><td>User registration, login, JWT token issuance and validation, OAuth integration, session management, and user profile management</td><td>Auth0 provides enterprise-grade authentication with built-in security features, MFA, social login, and scales automatically. Node.js offers fast token validation and can handle 5K+ auth requests per second per instance.</td></tr><tr><td><strong>WebSocket Connection Manager</strong></td><td><code>Go with Gorilla WebSocket library, deployed on Kubernetes with HPA</code></td><td>Maintains persistent WebSocket connections, handles connection lifecycle, message routing, presence management, and broadcasts streaming responses to clients</td><td>Go excels at concurrent connection handling with lightweight goroutines. Each instance can handle 10K+ concurrent WebSockets with minimal memory overhead. Stateless design allows horizontal scaling based on connection count.</td></tr><tr><td><strong>Conversation Service</strong></td><td><code>Java Spring Boot with Spring Data JPA</code></td><td>CRUD operations for conversation threads, message persistence, context window management, conversation search, and thread organization</td><td>Spring Boot provides mature transaction management, excellent PostgreSQL integration, and strong consistency guarantees. JPA simplifies complex queries for conversation history and search. Battle-tested at enterprise scale.</td></tr><tr><td><strong>LLM Gateway Service</strong></td><td><code>Python with FastAPI and LangChain for LLM orchestration</code></td><td>Abstracts multiple LLM providers, routes requests to appropriate backends, handles streaming, implements retry logic with exponential backoff, tracks costs per request, and provides automatic failover</td><td>Python ecosystem has best LLM library support (OpenAI SDK, Anthropic SDK, transformers). FastAPI provides async streaming support essential for token-by-token delivery. LangChain simplifies multi-provider integration and context management.</td></tr><tr><td><strong>File Processing Service</strong></td><td><code>Python with Celery for async processing, Tesseract for OCR, PyPDF2 for PDF parsing</code></td><td>Handles file uploads, validates file types and sizes, extracts text from documents (OCR, PDF parsing), processes images for vision models, and stores files in object storage</td><td>Python has rich libraries for document processing and image manipulation. Celery provides distributed task queue for async processing of large files without blocking API responses. Can scale workers independently based on queue depth.</td></tr><tr><td><strong>Search Service</strong></td><td><code>Elasticsearch with custom analyzers for semantic search</code></td><td>Indexes conversation content, provides full-text search across message history, supports filtering by date, model, and tags</td><td>Elasticsearch provides sub-second full-text search across billions of documents. Supports complex queries, filtering, and aggregations. Can be extended with vector embeddings for semantic search. Scales horizontally with sharding.</td></tr><tr><td><strong>Rate Limiter Service</strong></td><td><code>Redis with Lua scripts for atomic rate limiting operations</code></td><td>Enforces per-user and per-tier rate limits, quota management, token bucket algorithm implementation, and communicates with billing service</td><td>Redis provides in-memory performance (&lt;1ms latency) essential for rate limit checks on every request. Lua scripts ensure atomic operations for token bucket algorithms. Redis Cluster provides high availability and scales to millions of users.</td></tr><tr><td><strong>Analytics &amp; Monitoring Service</strong></td><td><code>ClickHouse for OLAP analytics with Grafana for visualization</code></td><td>Collects usage metrics, tracks costs per request and per user, monitors system health, generates reports for admin dashboard</td><td>ClickHouse excels at high-volume time-series analytics with billions of rows, providing sub-second query performance for dashboards. Columnar storage reduces costs. Grafana provides rich visualization for admin dashboards.</td></tr><tr><td><strong>Notification Service</strong></td><td><code>Node.js with SendGrid for email, Firebase Cloud Messaging for push</code></td><td>Sends email notifications, push notifications, and in-app alerts for quota limits, system updates, and shared conversations</td><td>SendGrid provides reliable email delivery with analytics. FCM supports cross-platform push notifications. Node.js event-driven architecture handles high-volume async notifications efficiently.</td></tr><tr><td><strong>Share Service</strong></td><td><code>Go with Redis for link metadata caching</code></td><td>Generates unique shareable links for conversations, manages privacy settings and expiration, renders public conversation views</td><td>Go provides fast link generation and validation. Redis caches share metadata to avoid database lookups on every public link access. Stateless design allows easy scaling for viral shared conversations.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Data Flow</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-claude-sonnet-4-5/data-flow.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Data Storage</h3>
+        <table>
+          <thead><tr><th>Store</th><th>Type</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>PostgreSQL 15 with Citus extension for horizontal sharding</strong></td><td><code>sql</code></td><td>Primary datastore for users, conversations, messages, and relationships. Citus enables horizontal sharding by user_id to handle billions of messages. JSONB support for flexible message metadata. Strong ACID guarantees ensure conversation consistency. Read replicas handle query load.</td></tr><tr><td><strong>Redis Cluster</strong></td><td><code>cache</code></td><td>Multi-purpose: JWT session storage, rate limiting counters, conversation context caching, WebSocket connection metadata, and hot conversation cache. Sub-millisecond latency critical for rate limiting and session validation. Redis Cluster provides automatic sharding and replication.</td></tr><tr><td><strong>Elasticsearch 8.x</strong></td><td><code>search</code></td><td>Full-text search across conversation history. Handles complex queries with filters, highlighting, and relevance scoring. Inverted indexes provide fast search across billions of messages. Can be extended with kNN for semantic search using embeddings.</td></tr><tr><td><strong>Amazon S3 with CloudFront CDN</strong></td><td><code>blob</code></td><td>Stores uploaded files (images, documents), exported conversations, and shared conversation snapshots. S3 provides 99.999999999% durability, lifecycle policies for cost optimization, and versioning. CloudFront accelerates file delivery globally.</td></tr><tr><td><strong>Apache Kafka</strong></td><td><code>queue</code></td><td>Event streaming backbone for async processing: analytics events, usage tracking, cost calculation, audit logs, and notification triggers. Kafka provides durable message storage, replay capability, and scales to millions of events per second. Decouples producers from consumers.</td></tr><tr><td><strong>ClickHouse</strong></td><td><code>nosql</code></td><td>Time-series analytics database for usage metrics, cost tracking, and admin dashboards. Optimized for OLAP queries with aggregations across billions of rows. Columnar storage provides 10-100x compression. Real-time ingestion from Kafka.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>API Design</h3>
+        <table>
+          <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody><tr><td><code>POST</code></td><td><code>/api/v1/auth/register</code></td><td>Register a new user account with email and password, returns JWT access and refresh tokens</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/auth/login</code></td><td>Authenticate user credentials and issue JWT tokens with user tier information</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/conversations</code></td><td>Create a new conversation thread, returns conversation_id and initial metadata</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/conversations/{conversation_id}</code></td><td>Retrieve full conversation thread with all messages, supports pagination and filtering</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/conversations/{conversation_id}/messages</code></td><td>Send a new message in a conversation, triggers LLM processing, returns message_id for tracking</td></tr><tr><td><code>WS</code></td><td><code>/ws/v1/stream</code></td><td>WebSocket endpoint for real-time bidirectional communication, streams LLM responses token-by-token, handles connection lifecycle</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/conversations/search</code></td><td>Full-text search across user's conversation history with filters for date range, model, and tags</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/files/upload</code></td><td>Upload files for multimodal input, supports images and documents up to 50MB, returns file_id and processing status</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/conversations/{conversation_id}/share</code></td><td>Generate a public shareable link for a conversation with configurable expiration and privacy settings</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/models</code></td><td>List available LLM models with capabilities, pricing, and context window information</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/users/me/usage</code></td><td>Get current user's usage statistics, quota consumption, and rate limit status</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/admin/analytics/usage</code></td><td>Admin endpoint for aggregated usage metrics, costs by model, and active user statistics</td></tr><tr><td><code>DELETE</code></td><td><code>/api/v1/conversations/{conversation_id}</code></td><td>Soft delete a conversation thread, marks as deleted but retains for recovery period</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Scalability Strategy</h3>
+        <p>**Horizontal Scaling Approach:**
+
+1. **Stateless Services**: All application services (API Gateway, Conversation Service, LLM Gateway, Auth Service, WebSocket Manager) are stateless and containerized with Kubernetes. Auto-scaling policies based on CPU (70% threshold) and custom metrics (concurrent connections for WS Manager, queue depth for File Processing).
+
+2. **WebSocket Connection Distribution**: Each WebSocket Manager instance handles 10K concurrent connections. With 100K target per region, deploy 10+ instances with sticky session routing at the load balancer level using consistent hashing on user_id. Connection metadata stored in Redis allows any instance to route messages.
+
+3. **Database Sharding**: PostgreSQL with Citus extension shards data by user_id across 16 initial shards, expandable to 64+. Each shard handles ~1.25M users. Read replicas (3 per shard) distribute query load. Message tables partitioned by created_at (monthly) for efficient archival.
+
+4. **LLM Gateway Scaling**: Python FastAPI instances scaled based on request queue depth in Kafka. Each instance maintains connection pools to external LLM APIs (OpenAI, Anthropic) with circuit breakers. Geographic proximity routing to LLM endpoints reduces latency.
+
+5. **Caching Strategy**: Redis Cluster with 12 nodes (4 shards × 3 replicas) caches: conversation contexts (30min TTL), user sessions (24hr), rate limit counters (1hr sliding window), hot conversations (top 10% by access). Cache hit rate target: 85%+.
+
+6. **Multi-Region Deployment**: Deploy across 3 regions (US-East, EU-West, Asia-Pacific) with Route53 geo-routing. Each region handles 7M DAU. Cross-region PostgreSQL replication (async) for disaster recovery. Kafka MirrorMaker 2 replicates events for analytics aggregation.
+
+**Vertical Scaling Considerations:**
+
+- PostgreSQL instances: Start with r6g.4xlarge (16 vCPU, 128GB RAM), scale to r6g.8xlarge for primary. Read replicas on r6g.2xlarge.
+- Redis Cluster: r6g.xlarge nodes (4 vCPU, 32GB RAM per node).
+- LLM Gateway: CPU-optimized c6i.2xlarge for fast Python execution.
+- ClickHouse: Storage-optimized i3en.2xlarge for cost-effective analytics.
+
+**Capacity Planning for 500M messages/day**: ~5,800 msgs/sec sustained, 12K msgs/sec peak. Each LLM Gateway instance handles 50 concurrent requests × 20 regions × 10 instances = 10K concurrent LLM requests. Over-provision by 50% for traffic spikes and failover capacity.</p>
+      </div>
+
+      <div class="section">
+        <h3>Trade-offs</h3>
+        
+        <div class="tradeoff">
+          <h4>WebSocket for real-time streaming vs Server-Sent Events (SSE)</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Bidirectional communication allows client to cancel requests mid-stream</span></li><li>✓ <span>Lower latency for streaming tokens (no HTTP overhead per message)</span></li><li>✓ <span>Better for interactive features like typing indicators and presence</span></li><li>✓ <span>Single persistent connection reduces connection overhead</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>More complex infrastructure with stateful connection management</span></li><li>✗ <span>Requires sticky sessions and connection state tracking in Redis</span></li><li>✗ <span>Harder to debug and monitor compared to stateless HTTP</span></li><li>✗ <span>Load balancer configuration more complex (TCP vs HTTP)</span></li><li>✗ <span>Higher memory consumption per connection on server side</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>PostgreSQL with Citus sharding vs fully distributed database (Cassandra/DynamoDB)</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Strong ACID guarantees ensure conversation consistency across multi-turn interactions</span></li><li>✓ <span>Complex relational queries for conversation threads, user relationships, and search</span></li><li>✓ <span>Mature ecosystem with excellent tooling, monitoring, and operational knowledge</span></li><li>✓ <span>JSONB support provides schema flexibility for message metadata without sacrificing SQL</span></li><li>✓ <span>Citus provides transparent sharding while maintaining PostgreSQL compatibility</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Harder to scale writes compared to eventually consistent NoSQL databases</span></li><li>✗ <span>Requires careful shard key selection (user_id) to avoid hot partitions</span></li><li>✗ <span>Cross-shard queries (e.g., admin analytics) are more expensive</span></li><li>✗ <span>Higher operational complexity for managing sharding compared to managed NoSQL</span></li><li>✗ <span>Potential single points of failure if primary shard goes down (mitigated with replicas)</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Python FastAPI for LLM Gateway vs Go/Java</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Best ecosystem for LLM libraries (OpenAI, Anthropic, LangChain, transformers)</span></li><li>✓ <span>Native async/await support in FastAPI ideal for streaming responses</span></li><li>✓ <span>Rapid development and easy integration with ML/AI tooling</span></li><li>✓ <span>LangChain provides abstraction for multi-provider LLM orchestration</span></li><li>✓ <span>Python's expressiveness reduces code complexity for prompt engineering</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Lower raw throughput compared to Go or Java (GIL limitations)</span></li><li>✗ <span>Higher memory consumption per request (~50MB vs ~5MB for Go)</span></li><li>✗ <span>Slower cold start times if using serverless deployment</span></li><li>✗ <span>Requires more instances to achieve same throughput as compiled languages</span></li><li>✗ <span>Dependency management more fragile (pip vs Go modules)</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Kafka for event streaming vs direct database writes with triggers</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Decouples message processing from analytics, allowing independent scaling</span></li><li>✓ <span>Event replay capability for backfilling analytics or debugging</span></li><li>✓ <span>Enables multiple consumers (analytics, search indexing, notifications) without coupling</span></li><li>✓ <span>Buffer for traffic spikes - prevents overwhelming downstream systems</span></li><li>✓ <span>Provides audit log for compliance and debugging</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Additional infrastructure complexity and operational overhead</span></li><li>✗ <span>Eventual consistency - analytics may lag real-time by seconds</span></li><li>✗ <span>Higher storage costs for event retention (30 days = ~15TB for 500M msgs/day)</span></li><li>✗ <span>Requires monitoring for consumer lag and rebalancing</span></li><li>✗ <span>Increases overall system latency for end-to-end event processing</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Multi-region active-active deployment vs active-passive</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Lower latency for global users by serving from nearest region</span></li><li>✓ <span>Higher availability - no failover delay if region goes down</span></li><li>✓ <span>Better resource utilization - all regions handle traffic simultaneously</span></li><li>✓ <span>Enables geographic compliance (EU data stays in EU region)</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Complex data consistency challenges for global user state (sessions, rate limits)</span></li><li>✗ <span>Higher infrastructure costs running full stack in multiple regions</span></li><li>✗ <span>Cross-region latency for database replication can cause eventual consistency issues</span></li><li>✗ <span>More complex deployment and testing (must validate across all regions)</span></li><li>✗ <span>Potential for split-brain scenarios if network partitions occur</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Redis for rate limiting vs database-based rate limiting</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Sub-millisecond latency critical for checking limits on every request</span></li><li>✓ <span>Atomic operations with Lua scripts prevent race conditions in token bucket algorithm</span></li><li>✓ <span>In-memory performance scales to millions of rate limit checks per second</span></li><li>✓ <span>TTL support automatically cleans up expired rate limit windows</span></li><li>✓ <span>Doesn't add load to primary transactional database</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Data loss risk if Redis instance fails (mitigated with Redis Cluster replication)</span></li><li>✗ <span>Higher cost per GB compared to disk-based storage</span></li><li>✗ <span>Requires separate infrastructure component to maintain and monitor</span></li><li>✗ <span>Complex to guarantee exactly-once semantics during failover scenarios</span></li><li>✗ <span>Memory constraints may require eviction policies that could lose rate limit state</span></li></ul></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="design-chatgpt-2" class="tab-content">
+      <div class="meta-bar">
+        <span>⏱ 39.4s</span>
+        <span>📅 2/8/2026, 1:52:44 PM</span>
+        <span>📁 design-chatgpt-gemini-3-flash-preview</span>
+      </div>
+
+      <div class="section">
+        <h3>Overview</h3>
+        <p class="overview-text">This system design describes a globally distributed, high-concurrency platform similar to ChatGPT, capable of handling 20M DAU and 500M messages per day. The architecture focuses on low-latency streaming (TTFT &lt; 500ms), immediate consistency for conversation history, and high availability across multiple LLM backends through an intelligent inference orchestration layer. It utilizes an event-driven model for background tasks like cost tracking and search indexing, while maintaining persistent connections for real-time interaction.</p>
+      </div>
+
+      <div class="section">
+        <h3>Requirements</h3>
+        <div class="pros-cons">
+          <div>
+            <h4>Functional</h4>
+            <ul><li>User authentication and session management</li><li>Multi-turn conversation with stateful context management</li><li>Real-time token streaming via Server-Sent Events (SSE)</li><li>Global conversation search and organization</li><li>Support for multiple LLM providers (OpenAI, Anthropic, internal models)</li><li>Multimodal support (Image/Document processing)</li><li>Public conversation sharing via UUID-masked URLs</li><li>Admin monitoring for cost and model performance</li></ul>
+          </div>
+          <div>
+            <h4>Non-Functional</h4>
+            <ul><li>Scale: 20 million daily active users</li><li>Latency: Time To First Token (TTFT) under 500ms</li><li>Concurrency: 100k+ active connections per region</li><li>Durability: Immediate consistency for conversation storage</li><li>Reliability: Automatic failover between LLM backends</li><li>Scalability: Horizontal scaling for all stateless services</li></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Architecture Diagram</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-gemini-3-flash-preview/architecture.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Components</h3>
+        <table>
+          <thead><tr><th>Component</th><th>Technology</th><th>Responsibility</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>Global Load Balancer</strong></td><td><code>Google Cloud Load Balancing or AWS Global Accelerator</code></td><td>Routes traffic to the nearest geographic region and handles SSL termination.</td><td>Provides low-latency entry points and sophisticated health-checking across global regions.</td></tr><tr><td><strong>Edge Gateway / API Gateway</strong></td><td><code>Kong or Envoy</code></td><td>Handles authentication, rate limiting (per-tier), and request routing.</td><td>High-performance proxy that supports custom plugins for quota management and JWT validation.</td></tr><tr><td><strong>Chat &amp; Context Service</strong></td><td><code>Go (Golang)</code></td><td>Orchestrates chat logic, manages conversation state, and formats prompts.</td><td>Golang's concurrency model (goroutines) is ideal for managing thousands of simultaneous streaming connections with low memory overhead.</td></tr><tr><td><strong>Inference Orchestrator</strong></td><td><code>Custom microservice (Python/FastAPI or Go)</code></td><td>Routes requests to LLM backends, handles retries, circuit breaking, and failover.</td><td>Decouples the chat logic from specific LLM APIs, allowing for dynamic weight shifting and cost optimization.</td></tr><tr><td><strong>Streaming Engine</strong></td><td><code>Server-Sent Events (SSE) over HTTP/2</code></td><td>Maintains persistent connections for pushing tokens to the client.</td><td>SSE is more efficient than WebSockets for unidirectional streaming from server to client and handles reconnections natively.</td></tr><tr><td><strong>Usage &amp; Billing Service</strong></td><td><code>Apache Flink</code></td><td>Tracks token consumption and costs per user/request for real-time quota enforcement.</td><td>Required for real-time stream processing of token counts to prevent over-usage beyond quotas.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Data Flow</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-gemini-3-flash-preview/data-flow.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Data Storage</h3>
+        <table>
+          <thead><tr><th>Store</th><th>Type</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>PostgreSQL (with Citus)</strong></td><td><code>sql</code></td><td>Ensures ACID compliance and immediate consistency for chat history. Citus allows horizontal sharding to handle 500M messages/day.</td></tr><tr><td><strong>Redis</strong></td><td><code>cache</code></td><td>Used for session management and caching recent conversation context to minimize DB hits during active turns.</td></tr><tr><td><strong>Elasticsearch</strong></td><td><code>search</code></td><td>Provides full-text search capabilities over millions of conversations with complex filtering (by date, model, or folder).</td></tr><tr><td><strong>Amazon S3 / Google Cloud Storage</strong></td><td><code>blob</code></td><td>Durable storage for multimodal inputs (images, PDF documents) and exported chat logs.</td></tr><tr><td><strong>Apache Kafka</strong></td><td><code>queue</code></td><td>Decouples chat streaming from analytical/billing tasks. Ensures that slow storage or billing updates do not block the user response.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>API Design</h3>
+        <table>
+          <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody><tr><td><code>POST</code></td><td><code>/v1/auth/login</code></td><td>Authenticates user and returns a JWT session token.</td></tr><tr><td><code>POST</code></td><td><code>/v1/chat/completions</code></td><td>Primary endpoint for sending messages. Supports 'stream: true' for SSE responses.</td></tr><tr><td><code>GET</code></td><td><code>/v1/conversations</code></td><td>Retrieves a paginated list of the user's conversation history.</td></tr><tr><td><code>POST</code></td><td><code>/v1/conversations/{id}/share</code></td><td>Generates a public, read-only URL for a specific conversation thread.</td></tr><tr><td><code>POST</code></td><td><code>/v1/files/upload</code></td><td>Uploads multimodal content; returns a file ID for inclusion in chat completions.</td></tr><tr><td><code>GET</code></td><td><code>/v1/models</code></td><td>Lists available LLM backends and their specific capabilities (e.g., vision, long context).</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Scalability Strategy</h3>
+        <p>The system scales horizontally at the service level using Kubernetes. The Chat Service and Inference Orchestrator are stateless, allowing auto-scaling based on CPU/Memory and concurrent connection counts. Database scalability is achieved through PostgreSQL sharding on 'user_id' to ensure data locality for a single user's history. Regional data isolation is used to meet 100k connection requirements per region, while a global Redis layer or DB replication handles shared state like public links.</p>
+      </div>
+
+      <div class="section">
+        <h3>Trade-offs</h3>
+        
+        <div class="tradeoff">
+          <h4>SSE over WebSockets</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Lower overhead on the server</span></li><li>✓ <span>Better support for HTTP/2 multiplexing</span></li><li>✓ <span>Built-in reconnection logic</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Unidirectional (server to client) only</span></li><li>✗ <span>Requires separate REST calls for client-side interruptions</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Sharded PostgreSQL for History</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Strong consistency for conversation turns</span></li><li>✓ <span>Relational schema fits organized folders/tags well</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>More complex to manage than NoSQL like DynamoDB</span></li><li>✗ <span>Requires careful shard key selection to avoid hotspots</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Inference Orchestrator Abstraction</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Seamless failover between providers</span></li><li>✓ <span>Centralized cost and rate limit tracking</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Additional network hop (approx 10-20ms latency)</span></li><li>✗ <span>Single point of failure if not properly redundant</span></li></ul></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="design-chatgpt-3" class="tab-content">
+      <div class="meta-bar">
+        <span>⏱ 85.3s</span>
+        <span>📅 2/8/2026, 1:55:11 PM</span>
+        <span>📁 design-chatgpt-gemini-3-pro-preview</span>
+      </div>
+
+      <div class="section">
+        <h3>Overview</h3>
+        <p class="overview-text">A distributed, event-driven architecture designed to support 20M+ DAU for a ChatGPT-like application. The system leverages persistent WebSocket connections for low-latency streaming (TTFT &lt; 500ms), a Model Orchestration Layer to abstract various LLM backends, and a tiered storage strategy (Redis -&gt; DynamoDB -&gt; S3) to handle the high write throughput of 500M messages per day. The design prioritizes interactivity and durability while ensuring strict cost governance and rate limiting.</p>
+      </div>
+
+      <div class="section">
+        <h3>Requirements</h3>
+        <div class="pros-cons">
+          <div>
+            <h4>Functional</h4>
+            <ul><li>User authentication (SSO, MFA) and session management.</li><li>Real-time streaming of LLM responses via WebSockets.</li><li>Multi-turn conversation context management.</li><li>Model switching (e.g., GPT-4, Claude, Llama 3) per conversation.</li><li>Multimodal input handling (Images, PDF upload) via S3.</li><li>Conversation history management (Create, Rename, Delete, Archive).</li><li>Full-text search across conversation history.</li><li>Public link generation for sharing conversations.</li><li>Admin dashboard for cost tracking and user management.</li></ul>
+          </div>
+          <div>
+            <h4>Non-Functional</h4>
+            <ul><li>Latency: Time to First Token (TTFT) &lt; 500ms.</li><li>Concurrency: Support 100k+ active WebSocket connections per region.</li><li>Availability: 99.99% uptime with multi-region failover.</li><li>Scalability: Horizontal scaling to handle 500M messages/day.</li><li>Durability: Zero data loss for conversation history.</li><li>Consistency: Immediate consistency for active chat, eventual consistency for search.</li><li>Billing Accuracy: Precise token counting for usage quotas.</li></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Architecture Diagram</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-gemini-3-pro-preview/architecture.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Components</h3>
+        <table>
+          <thead><tr><th>Component</th><th>Technology</th><th>Responsibility</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>Edge Gateway / API Gateway</strong></td><td><code>AWS Application Load Balancer + Kong Gateway</code></td><td>SSL termination, Geo-routing, Rate limiting, Authentication verification.</td><td>Kong provides robust plugin support for rate-limiting (Token Bucket) and JWT validation before traffic hits internal services.</td></tr><tr><td><strong>Connection Manager (Chat Service)</strong></td><td><code>Go (Golang) on Kubernetes</code></td><td>Manages WebSocket connections, broadcasts stream chunks, handles user state.</td><td>Go's Goroutines are ideal for handling hundreds of thousands of concurrent WebSocket connections with low memory footprint compared to Node.js or Python.</td></tr><tr><td><strong>Model Orchestrator</strong></td><td><code>Python (FastAPI) with LangChain adapters</code></td><td>Standardizes API calls to different LLM providers, handles retry logic, and failover.</td><td>Python ecosystem has the best libraries for LLM integration. Isolating this allows independent scaling based on inference latency.</td></tr><tr><td><strong>Context Assembly Service</strong></td><td><code>Rust Microservice</code></td><td>Retrieves relevant chat history and injects system prompts/RAG context before inference.</td><td>Requires extremely low latency to fetch and tokenize text before sending to the LLM to meet the 500ms TTFT constraint.</td></tr><tr><td><strong>Billing &amp; Analytics Consumer</strong></td><td><code>Apache Flink</code></td><td>Consumes completed message events to calculate costs and update quotas.</td><td>Stateful stream processing needed to aggregate token usage in real-time for strict quota enforcement.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Data Flow</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-gemini-3-pro-preview/data-flow.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Data Storage</h3>
+        <table>
+          <thead><tr><th>Store</th><th>Type</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>Amazon DynamoDB</strong></td><td><code>nosql</code></td><td>Primary store for Chat History. Supports massive write throughput (500M msgs/day) and efficient querying by Partition Key (ConversationID) and Sort Key (Timestamp).</td></tr><tr><td><strong>Redis Cluster</strong></td><td><code>cache</code></td><td>Stores active session state, recent conversation context (window), and user rate limit counters to minimize latency on the critical path.</td></tr><tr><td><strong>Amazon S3</strong></td><td><code>blob</code></td><td>Storage for user-uploaded images/documents. Low cost, high durability, and allows offloading bandwidth via Presigned URLs.</td></tr><tr><td><strong>PostgreSQL</strong></td><td><code>sql</code></td><td>Stores structured relational data: User profiles, Organization hierarchies, Billing Invoices, and configuration settings.</td></tr><tr><td><strong>Elasticsearch / OpenSearch</strong></td><td><code>search</code></td><td>Provides full-text search capabilities over chat history, which DynamoDB cannot handle efficiently.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>API Design</h3>
+        <table>
+          <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody><tr><td><code>WS</code></td><td><code>/ws/v1/chat</code></td><td>Main WebSocket endpoint for bi-directional streaming of prompts and LLM responses.</td></tr><tr><td><code>POST</code></td><td><code>/v1/conversations</code></td><td>Creates a new conversation thread, returns conversation_id.</td></tr><tr><td><code>GET</code></td><td><code>/v1/conversations/{id}/messages</code></td><td>Retrieves paginated message history for a specific conversation.</td></tr><tr><td><code>GET</code></td><td><code>/v1/models</code></td><td>Lists available LLM models user is authorized to use.</td></tr><tr><td><code>POST</code></td><td><code>/v1/files/upload-url</code></td><td>Generates a presigned S3 URL for uploading images or documents.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Scalability Strategy</h3>
+        <p>Horizontal scaling via Kubernetes HPA based on CPU and custom metrics (Active WebSocket Connections). Database scales via DynamoDB On-Demand capacity or provisioned capacity with auto-scaling. The system is sharded by ConversationID for data locality. Redis Cluster handles hot-path reads. A Queue-based decoupling (Kafka) allows background tasks (search indexing, analytics) to scale independently of the real-time chat service.</p>
+      </div>
+
+      <div class="section">
+        <h3>Trade-offs</h3>
+        
+        <div class="tradeoff">
+          <h4>WebSockets over Server-Sent Events (SSE)</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Bi-directional capability allows users to interrupt generation mid-stream.</span></li><li>✓ <span>Better support for future features like real-time voice or collaborative editing.</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>More complex load balancing and state management on the server.</span></li><li>✗ <span>Issues with corporate firewalls compared to standard HTTP/SSE.</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>DynamoDB for History (NoSQL) vs PostgreSQL</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Predictable low-latency performance at infinite scale (20M DAU).</span></li><li>✓ <span>Schema flexibility for evolving message metadata (e.g., adding citations).</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Complex queries (e.g., search) are impossible, requiring a secondary indexer (Elasticsearch).</span></li><li>✗ <span>Higher cost per GB compared to compressed cold storage in SQL/S3.</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Async Token Counting (Post-generation)</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Does not add latency to the streaming response.</span></li><li>✓ <span>Simplifies the hot path architecture.</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Risk of minor quota overages if a user spams requests before the counter updates.</span></li><li>✗ <span>Complexity in reconciling partial streams if a connection drops.</span></li></ul></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="design-chatgpt-4" class="tab-content">
+      <div class="meta-bar">
+        <span>⏱ 320.9s</span>
+        <span>📅 2/8/2026, 10:54:53 AM</span>
+        <span>📁 design-chatgpt-gpt-5</span>
+      </div>
+
+      <div class="section">
+        <h3>Overview</h3>
+        <p class="overview-text">A globally distributed, real-time conversational AI platform supporting multi-turn chat with multiple LLM backends, multimodal inputs, and rich history management. The system is built for 20M DAUs and 500M messages/day with sub-500ms time-to-first-token via a high-performance WebSocket gateway, an LLM routing layer with fast failover, and region-affine, strongly consistent storage for conversation history. Analytics, cost tracking, and admin observability are first-class through an events pipeline into ClickHouse and Prometheus/Grafana. The core data plane is stateless, horizontally scalable on Kubernetes, and tolerant of provider or regional failures.</p>
+      </div>
+
+      <div class="section">
+        <h3>Requirements</h3>
+        <div class="pros-cons">
+          <div>
+            <h4>Functional</h4>
+            <ul><li>User authentication (OAuth/social SSO) and session management</li><li>Create/read/update/delete multi-turn conversations and messages with context retention</li><li>Real-time streaming of assistant responses over WebSocket (token-by-token)</li><li>Conversation history: search, star, tag, foldering, archive, delete</li><li>Multiple model selection across providers and in-house inference</li><li>Rate limiting and quota enforcement by user/tier and per-model</li><li>File upload for images/documents with virus scan, OCR/text extraction, and multimodal prompt support</li><li>Share conversations via public links with configurable visibility</li><li>Admin dashboard: model/provider health, usage, cost, errors, rate limits/quota states</li><li>Cost tracking per request for accurate billing and cost attribution</li></ul>
+          </div>
+          <div>
+            <h4>Non-Functional</h4>
+            <ul><li>Time-to-first-token (TTFT) &lt; 500ms p95</li><li>Support ≥100K concurrent WebSocket connections per region</li><li>Immediate consistency for conversation/message persistence</li><li>Regional fault tolerance and LLM provider failover with graceful degradation</li><li>Horizontal scalability to 500M messages/day (60k msgs/sec peak)</li><li>Data durability (multi-AZ), point-in-time recovery, backups</li><li>Security: WAF, DDoS protection, encryption in transit/at rest, least-privilege IAM</li><li>Observability: distributed tracing, metrics, logs, audit trails</li><li>Privacy and compliance readiness (GDPR/CCPA data subject controls)</li><li>Cost efficiency: autoscaling compute/GPU, cost-aware routing, storage tiering</li></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Architecture Diagram</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-gpt-5/architecture.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Components</h3>
+        <table>
+          <thead><tr><th>Component</th><th>Technology</th><th>Responsibility</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>Client Web App</strong></td><td><code>Next.js + React, TypeScript, WebSocket, highlight.js, Markdown-it</code></td><td>SPA for chat UI, Markdown rendering, code highlighting, WebSocket streaming, file uploads, search, and sharing</td><td>Mature ecosystem, SSR for SEO (shared links), excellent dev productivity and performance</td></tr><tr><td><strong>Edge CDN/WAF &amp; Global LB</strong></td><td><code>Cloudflare CDN + Cloudflare Load Balancer + Bot Management</code></td><td>TLS termination, caching static assets, DDoS/WAF, geo-steering to nearest healthy region</td><td>Global footprint, anycast, robust WAF and health-based geo-routing to meet latency and availability targets</td></tr><tr><td><strong>API &amp; WebSocket Gateway</strong></td><td><code>Go microservice on Kubernetes with NGINX Ingress (ALB) and HTTP/2; gorilla/websocket; gRPC to internal services</code></td><td>Single entry for REST and WebSocket; authZ/authN checks, rate limiting, session validation, request fan-out to internal services; streams tokens to client</td><td>Go delivers low-latency IO and high concurrency; stable WS handling; NGINX Ingress + ALB scale well</td></tr><tr><td><strong>Auth Service</strong></td><td><code>Auth0 (OIDC) + JWT (RS256)</code></td><td>User identity, OAuth/social login, JWT issuance, refresh tokens, RBAC/roles (user/admin)</td><td>Fast to integrate, enterprise SSO, adaptive MFA; offloads identity risk; standards-compliant OIDC</td></tr><tr><td><strong>Rate Limit &amp; Quota Service</strong></td><td><code>Envoy Global Rate Limit Service + Redis Cluster; Lua in NGINX for shadow checks</code></td><td>Enforces per-user/tier rate limits (sliding window) and quotas; provides near-real-time counters</td><td>Envoy RLS is battle-tested; Redis offers sub-ms counters and atomicity with Lua scripts</td></tr><tr><td><strong>Session/Cache Store</strong></td><td><code>Redis Cluster (6.x) with Redis Streams for ephemeral events</code></td><td>JWT blacklist, session metadata, ephemeral streaming buffers, recent context window cache</td><td>In-memory speed, high availability via clustering and replication</td></tr><tr><td><strong>Conversation Service</strong></td><td><code>PostgreSQL (Citus) multi-tenant sharded by user_id; Go service using pgx</code></td><td>CRUD for conversations/messages, context building, sharing ACLs, foldering/tags; transactional writes</td><td>Immediate consistency and SQL semantics; Citus scales horizontally and keeps p95 low with partitioning</td></tr><tr><td><strong>Search/Indexing Service</strong></td><td><code>OpenSearch (multi-az) + k-NN plugin; background workers (Go) for indexing</code></td><td>Full-text search over titles/messages; semantic search via embeddings; indexing pipeline</td><td>Scalable search with near real-time indexing; k-NN for semantic search without extra vector DB</td></tr><tr><td><strong>LLM Router</strong></td><td><code>Go service with gobreaker, HTTP/2 keep-alive pools; provider SDKs; configuration via Consul/etcd</code></td><td>Model catalog, routing to providers/in-house; health checks, circuit breakers, retries, cost-aware selection; streaming token multiplexing</td><td>Low-latency, robust control plane with per-provider health and dynamic routing rules</td></tr><tr><td><strong>Provider Connectors</strong></td><td><code>Connectors for &quot;OpenAI/Anthropic/Azure OpenAI/Google Vertex&quot;; retries with exponential backoff; streaming adapters</code></td><td>Integrations to external LLMs and embeddings</td><td>Diversity reduces provider risk and enables cost/performance optimization</td></tr><tr><td><strong>In-house Inference Cluster</strong></td><td><code>vLLM on Kubernetes GPU nodes (NVIDIA A10/A100), Triton for embeddings; Istio for mTLS</code></td><td>Self-hosted models (vLLM) for failover and cost control; embeddings server</td><td>High throughput, streaming-friendly; cost-efficient for baseline models and embeddings</td></tr><tr><td><strong>File Ingestion Service</strong></td><td><code>Amazon S3 + S3 Object Lambda (virus scan with ClamAV) + AWS Textract + Apache Tika; Step Functions for orchestration</code></td><td>Pre-signed uploads, virus scanning, OCR/text extraction, chunking; links assets to messages</td><td>Serverless pipeline scales elastically; S3 durability and cost efficiency for blobs</td></tr><tr><td><strong>Cost &amp; Billing Service</strong></td><td><code>Kafka consumers (Go) -&gt; ClickHouse for analytics; Postgres for authoritative balances</code></td><td>Compute per-request cost (provider rates, tokens, GPU time), store usage, expose invoices and quotas</td><td>ClickHouse excels at high-ingest analytics; Postgres for transactional balances and limits</td></tr><tr><td><strong>Event Bus</strong></td><td><code>Apache Kafka (AWS MSK)</code></td><td>Asynchronous events: usage, costs, audit logs, indexing triggers</td><td>High-throughput, durable event streaming; ecosystem support</td></tr><tr><td><strong>Analytics &amp; Monitoring</strong></td><td><code>Prometheus + Grafana; OpenTelemetry + Jaeger; Loki for logs; CloudWatch for infra</code></td><td>Dashboards, alerts, traces, logs</td><td>Proven OSS stack, vendor-neutral instrumentation</td></tr><tr><td><strong>Admin Dashboard</strong></td><td><code>Next.js + RBAC; reads from ClickHouse/Prometheus/Postgres</code></td><td>Operational UI: usage, costs, errors, provider health, throttles; model catalog management</td><td>Unified operational control plane with low-latency analytics queries</td></tr><tr><td><strong>CDN Assets &amp; Static Hosting</strong></td><td><code>Cloudflare + S3 static site hosting</code></td><td>Serve static JS/CSS/images</td><td>Global low-latency delivery for assets</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Data Flow</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-gpt-5/data-flow.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Data Storage</h3>
+        <table>
+          <thead><tr><th>Store</th><th>Type</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>PostgreSQL (Citus)</strong></td><td><code>sql</code></td><td>Strong consistency and transactions for conversations/messages; Citus provides horizontal sharding by user_id with high write throughput and low-latency queries</td></tr><tr><td><strong>Redis Cluster</strong></td><td><code>cache</code></td><td>Sub-millisecond counters for rate limits, sessions, ephemeral streaming buffers, and hot context windows</td></tr><tr><td><strong>Amazon S3</strong></td><td><code>blob</code></td><td>Durable, cost-effective storage for file uploads, images, and large attachments; lifecycle policies for tiering</td></tr><tr><td><strong>OpenSearch</strong></td><td><code>search</code></td><td>Full-text and semantic search with k-NN; scalable indexing and near real-time search for conversation history</td></tr><tr><td><strong>Kafka (AWS MSK)</strong></td><td><code>queue</code></td><td>Durable, scalable event streaming for usage, billing, indexing, and audit logs decoupling producers/consumers</td></tr><tr><td><strong>ClickHouse</strong></td><td><code>sql</code></td><td>High-ingest, columnar analytics for usage and cost reporting; sub-second aggregations at scale</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>API Design</h3>
+        <table>
+          <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody><tr><td><code>WS</code></td><td><code>/v1/ws</code></td><td>Bidirectional WebSocket for sending user messages and receiving token-streaming responses and events</td></tr><tr><td><code>POST</code></td><td><code>/v1/conversations</code></td><td>Create a new conversation (title, tags, model selection, visibility)</td></tr><tr><td><code>GET</code></td><td><code>/v1/conversations</code></td><td>List conversations with filters (folder, tag, starred) and pagination</td></tr><tr><td><code>GET</code></td><td><code>/v1/conversations/{id}</code></td><td>Get a conversation with messages (server-side pagination)</td></tr><tr><td><code>POST</code></td><td><code>/v1/conversations/{id}/messages</code></td><td>Add a user message to a conversation (text, file refs, tool calls)</td></tr><tr><td><code>GET</code></td><td><code>/v1/messages/{id}</code></td><td>Get message detail and streaming status</td></tr><tr><td><code>GET</code></td><td><code>/v1/search</code></td><td>Search conversations/messages (full-text + semantic options)</td></tr><tr><td><code>GET</code></td><td><code>/v1/models</code></td><td>List available models and tiers, pricing metadata</td></tr><tr><td><code>POST</code></td><td><code>/v1/files</code></td><td>Initiate file upload and get pre-signed URL; returns file_id</td></tr><tr><td><code>POST</code></td><td><code>/v1/share/{conversation_id}</code></td><td>Create/update share link (public/unlisted/expire)</td></tr><tr><td><code>GET</code></td><td><code>/v1/usage</code></td><td>Per-user usage and remaining quota by period</td></tr><tr><td><code>GET</code></td><td><code>/v1/admin/metrics</code></td><td>Admin: provider health, error rates, throughput, cost summaries</td></tr><tr><td><code>PUT</code></td><td><code>/v1/admin/models</code></td><td>Admin: manage model catalog, routing weights, and availability</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Scalability Strategy</h3>
+        <p>- Traffic and sessions: Anycast via Cloudflare to nearest region. Sticky session not required; WebSocket connections are long-lived and evenly distributed via ALB. Gateway pods autoscale on CPU and open FDs; each Go pod targets ~4–5K concurrent WS; 30 pods suffice for 150K WS with headroom per region.
+- Storage: Citus shards by user_id across nodes; co-locate primary and replicas in same AZ to minimize latency. Connection pooling with PgBouncer. Hot partitions handled by rebalancing shards. PITR and logical replication to DR region.
+- Search: OpenSearch domain scales horizontally across data nodes. Index with 1–3 primary shards per index and ILM for rollover. Async indexers consume from Kafka for sustained throughput.
+- LLM routing: Health probes and circuit breakers per provider/region; latency-aware load balancing and hedged requests before first token. In-house vLLM autoscaling on GPU metrics (queue depth, tokens/sec). Keep-alive HTTP/2 pools to reduce TTFB.
+- Rate limiting: Redis Cluster with hash tags for per-user keys ensures single-shard updates. Use sliding window with Lua for atomicity. Quotas aggregated periodically from ClickHouse and persisted to Postgres for authority.
+- WebSockets: Separate HPA based on concurrent connections and network IO. Use SO_REUSEPORT and pod anti-affinity. Idle pings to detect dead peers. Backpressure controls to avoid OOM.
+- Multi-region: Active-active per region; users are region-affined based on home region stored in profile. Cross-region failover via Cloudflare LB health checks; if home region is down, read last durable snapshot from DR and write to degraded mode (queue for backfill) with user-notice.
+- Observability: OpenTelemetry traces propagate across gateway, LLM router, connectors. SLO-based autoscaling and alerting for TTFT and error budgets.</p>
+      </div>
+
+      <div class="section">
+        <h3>Trade-offs</h3>
+        
+        <div class="tradeoff">
+          <h4>Use PostgreSQL (Citus) for conversations instead of a globally-distributed DB (e.g., Spanner/CockroachDB)</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Immediate consistency and strong SQL semantics</span></li><li>✓ <span>Operational familiarity and cost-effective scaling</span></li><li>✓ <span>Shard-by-user keeps latency low</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Cross-region strong consistency not automatic</span></li><li>✗ <span>Requires shard management and regional affinity policies</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>WebSockets for streaming vs Server-Sent Events</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Bidirectional control channel (cancel, tool calls)</span></li><li>✓ <span>Better concurrency characteristics and fewer HTTP headers</span></li><li>✓ <span>Widely supported by CDNs/LBs</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>More complex connection lifecycle management</span></li><li>✗ <span>Stateful long-lived connections impact autoscaling</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>OpenSearch for full-text + k-NN vs separate vector DB</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Single search stack reduces ops overhead</span></li><li>✓ <span>Near real-time indexing with scalable ingestion</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>k-NN recall/latency may trail specialized vector DBs</span></li><li>✗ <span>Index tuning and memory footprint can be heavy</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Auth0 for identity instead of building in-house</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Faster time-to-market, robust SSO/MFA</span></li><li>✓ <span>Security updates and compliance handled by vendor</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Vendor cost and dependency</span></li><li>✗ <span>Rate limits and token introspection latency considerations</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Kafka + ClickHouse for analytics and cost tracking</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>High-ingest, low-cost analytics at scale</span></li><li>✓ <span>Flexible schema evolution for events</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Operational complexity (clusters to manage)</span></li><li>✗ <span>Eventual consistency for analytics views</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>In-house vLLM cluster as secondary routing target</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Cost control for common models</span></li><li>✓ <span>Resilience to third-party outages</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Requires GPU capacity management and model maintenance</span></li><li>✗ <span>May lag on latest proprietary model capabilities</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Async indexing to OpenSearch (eventual) while DB is immediate</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Protects write path latency and TTFT</span></li><li>✓ <span>Scales independently</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Search results may lag by seconds</span></li><li>✗ <span>Requires reconciliation jobs for rare failures</span></li></ul></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="design-chatgpt-5" class="tab-content">
+      <div class="meta-bar">
+        <span>⏱ 138.3s</span>
+        <span>📅 2/8/2026, 10:57:24 AM</span>
+        <span>📁 design-chatgpt-gpt-5-mini</span>
+      </div>
+
+      <div class="section">
+        <h3>Overview</h3>
+        <p class="overview-text">A globally distributed, real-time web platform that enables multi-turn conversations with configurable LLM backends, streaming responses token-by-token, durable conversation history, multimodal inputs, per-user quotas and billing, and admin monitoring. The design uses managed cloud components where appropriate (AWS examples used for concreteness) and is built for 20M DAU and ~500M messages/day — with multi-region deployment, autoscaling WebSocket clusters, strong consistency for conversation data, semantic search, and resilient LLM backend routing with automatic failover and cost accounting.</p>
+      </div>
+
+      <div class="section">
+        <h3>Requirements</h3>
+        <div class="pros-cons">
+          <div>
+            <h4>Functional</h4>
+            <ul><li>User authentication, registration, password reset and session management</li><li>Create and continue multi-turn conversation threads with context retention</li><li>Real-time streaming of LLM responses token-by-token to clients</li><li>Durable and immediately consistent conversation history (read/write immediately consistent)</li><li>Search and organize conversation history (text + semantic search)</li><li>Support multiple LLM backends and per-conversation model selection</li><li>Rate limiting and per-tier usage quotas; block/soft-limit enforcement</li><li>Markdown rendering with safe sanitization (code blocks, tables, etc.)</li><li>File upload and multimodal input handling (images, documents) with safe storage and processing</li><li>Share conversations via public links (read-only) with optional expiry</li><li>Admin dashboard for usage, costs, quota management, and system health</li><li>Per-request cost tracking for accurate billing</li></ul>
+          </div>
+          <div>
+            <h4>Non-Functional</h4>
+            <ul><li>Scale to 20M daily active users and 500M messages/day</li><li>Support at least 100K concurrent WebSocket connections per region</li><li>Start streaming first token within 500ms of request</li><li>Conversation history must be durable and immediately consistent</li><li>High availability and graceful degradation on LLM backend failures with automatic failover</li><li>Low latency (P95 request response times within reasonable bounds) and high throughput</li><li>Secure file handling, sanitization, and access controls</li><li>Observability: request tracing, per-request cost telemetry, metrics and logs</li><li>Regulatory considerations: data residency and GDPR-friendly features (export/delete)</li></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Architecture Diagram</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-gpt-5-mini/architecture.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Components</h3>
+        <table>
+          <thead><tr><th>Component</th><th>Technology</th><th>Responsibility</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>Edge / CDN</strong></td><td><code>AWS CloudFront + AWS WAF (or Cloudflare) for global CDN &amp; edge security</code></td><td>Global caching, TLS termination, hosting static assets, and routing to nearest API region. Protect against DDoS and serve prerendered content.</td><td>Low latency global content delivery and edge protections. CloudFront integrates with regional ALBs and AWS API Gateway; WAF provides DDoS/IPS rules.</td></tr><tr><td><strong>API Gateway (REST &amp; WebSocket)</strong></td><td><code>AWS API Gateway (HTTP/APIGW v2 for WebSocket) or AWS Application Load Balancer + NLB for WebSocket if custom stack preferred</code></td><td>Ingress point for HTTP(S) REST APIs and managed WebSocket connections, authentication/authorization integration, metrics, and throttling.</td><td>Managed API Gateway handles large scale WebSocket connections reliably and integrates with Lambda and VPC targets. Reduces operational burden to meet 100K+ connections per region.</td></tr><tr><td><strong>Auth Service / Identity</strong></td><td><code>Auth0 or Amazon Cognito (or self-hosted Keycloak for more control)</code></td><td>User authentication (email/password, OAuth), session issuance, token lifecycle, MFA, and account management.</td><td>Managed identity reduces time to market; Cognito/Auth0 handle scaling, OIDC/OAuth flows, social login, and integrate with API Gateway and IAM. Can fallback to Keycloak if self-hosting required for compliance.</td></tr><tr><td><strong>Frontend (Web &amp; Mobile clients)</strong></td><td><code>React + Next.js for Web (SSR), React Native for mobile; use WebSocket &amp; SSE clients for streaming. Use remark/rehype for markdown rendering and DOMPurify for sanitization.</code></td><td>UI for conversations, streaming UI, markdown rendering/sanitization, file uploads, sharing links, offline behaviors, and websocket clients.</td><td>Next.js gives performant SSR/CSR mix and edge support; well-supported libraries for markdown and security.</td></tr><tr><td><strong>Connection Manager / WebSocket Workers</strong></td><td><code>Kubernetes (EKS) running horizontally scaled WebSocket worker pods behind API Gateway or ALB, using Envoy/ingress for routing. Use Redis for presence/connection metadata.</code></td><td>Maintain WebSocket connections, route tokens to clients, enforce per-connection rate limits, maintain ephemeral state, and connect to LLM streaming output.</td><td>Kubernetes provides autoscaling and lifecycle control. Breaking stream work into worker pods allows streaming token-by-token with low-latency writes to sockets; Redis stores connection mapping for routing in multi-pod deployments.</td></tr><tr><td><strong>Conversation Service (API)</strong></td><td><code>Stateless microservice in Kubernetes (gRPC/HTTP) with connection to Aurora PostgreSQL (Primary writer) and a caching layer (Redis).</code></td><td>Handles conversation CRUD, multi-turn context assembly, versioning, bookmarks, shareable link creation, and immediate persistent writes.</td><td>Stateless services scale easily. Aurora PostgreSQL provides strong consistency and supports high write throughput with multi-AZ. Redis accelerates hot path reads and rate-limit checks.</td></tr><tr><td><strong>Message Ingest &amp; Streaming Orchestrator (LLM Router)</strong></td><td><code>Stateless microservice (Kubernetes) using gRPC to LLM backends; feature-rich router capability using Hystrix-like circuit breaker libraries and per-model adapters. Persist logs &amp; events to Kafka (MSK) for downstream processing.</code></td><td>Orchestrates sending prompts to selected LLM backend(s), streams tokens back to Connection Manager, calculates per-request cost, applies circuit-breakers and failover to alternate models/backends, and logs telemetry.</td><td>Centralized routing simplifies failover, cost accounting, and policy enforcement. gRPC yields low-latency backend calls; Kafka provides durable eventing for billing and analytics.</td></tr><tr><td><strong>LLM Backends</strong></td><td><code>Hybrid: External providers (OpenAI/Anthropic) + Internal GPU clusters orchestrated by Kubernetes + Triton / NVIDIA TensorRT / Ray Serve for model serving. Use model proxies that expose gRPC or HTTP streaming.</code></td><td>Provide model inference and token streaming. Could be managed external APIs (OpenAI, Anthropic) and/or internal GPU clusters (private models).</td><td>Hybrid provides capacity and cost controls: external for burst/spiky loads and internal for steady-state/private models. Triton/Ray Serve are production-ready for large model serving with streaming support.</td></tr><tr><td><strong>Cache &amp; Rate-Limit Store</strong></td><td><code>Redis (Amazon ElastiCache in clustered mode with clustering-enabled Redis or Redis Enterprise)</code></td><td>Fast token-bucket rate limits, session cache, short-lived conversation caches for hot reads, and presence store.</td><td>Redis supports very low-latency operations, atomic counters, Lua scripting for rate-limiting logic, and clustering for scale.</td></tr><tr><td><strong>Durable Storage (Conversations / Metadata / Billing)</strong></td><td><code>Amazon Aurora PostgreSQL (clustered, multi-AZ, read-replicas) with partitioning/sharding by tenant or hashed conversation id.</code></td><td>Immediate-consistency primary store for conversations, messages, user metadata, billing records, and access controls.</td><td>Relational strong consistency and transactions for immediate-consistency requirement; Aurora scales reads and provides high durability and automated backups.</td></tr><tr><td><strong>Object Store (Files &amp; Attachments)</strong></td><td><code>Amazon S3 with S3 Object Lambda hooks; presigned uploads; Lambda for scanning via ClamAV or third-party virus scanning</code></td><td>Store uploaded files (images, docs) and serve them to model pipelines and clients via presigned URLs; lifecycle &amp; virus-scan results.</td><td>S3 is durable, scalable, and cost-effective; presigned uploads offload bandwidth; Lambda-based scanning pipeline can be used asynchronously.</td></tr><tr><td><strong>Search &amp; Embeddings</strong></td><td><code>Hybrid: OpenSearch (for keyword/structured search) + Vector DB (Pinecone, Milvus, or Amazon OpenSearch vector plugin) for embeddings. Use a managed embedding service or produce embeddings via dedicated model instances and store vectors in vector DB.</code></td><td>Text and semantic search across conversation history and attachments; embedding generation and vector search.</td><td>OpenSearch handles traditional search and filters; vector DB supports semantic similarity at scale. Separating concerns lets us scale search independently.</td></tr><tr><td><strong>Event Bus / Streaming &amp; Analytics</strong></td><td><code>Apache Kafka (Amazon MSK) for high-throughput durable logs; Kafka Connect to data warehouse (Snowflake/BigQuery) and stream processors (Flink/Kafka Streams).</code></td><td>Durable eventing for audit logs, billing events, metrics, and asynchronous jobs (indexing, notifications, cost aggregation).</td><td>Kafka scales well for hundreds of thousands of events/sec and supports exactly-once processing patterns enabling accurate billing and analytics.</td></tr><tr><td><strong>Billing &amp; Cost Accounting</strong></td><td><code>Service that consumes Kafka billing events, applies per-model cost rates, stores detailed line-items in PostgreSQL and aggregates in OLAP (BigQuery/Snowflake) for reports. Use serverless ETL for daily aggregation.</code></td><td>Accurate per-request cost tracking, aggregation to user billing, tier enforcement, and exports to billing system.</td><td>Event-driven accounting keeps near-real-time cost tracking for each request; OLAP enables fast analytics and admin dashboards.</td></tr><tr><td><strong>Admin Dashboard &amp; Observability</strong></td><td><code>Prometheus + Grafana for metrics; Jaeger for distributed traces; ELK/OpenSearch for logs; Grafana dashboards with role-based access. Admin frontend built on React + RBAC.</code></td><td>System metrics, alerts, per-user/tier usage, cost dashboards, model-health, and structured logs.</td><td>Standard observability stack with tracing allows operators to debug and monitor the system and analyze cost/usage.</td></tr><tr><td><strong>Security &amp; Compliance</strong></td><td><code>AWS KMS for secrets, IAM for infra access control, Vault (HashiCorp) for application secrets if self-hosting; S3 encryption and TLS everywhere.</code></td><td>Access controls, secret management, key rotation, audit logs, data deletion/export endpoints, encryption at rest/in transit, and DLP for file scanning.</td><td>Managed key stores and RBAC minimize operational overhead while meeting compliance.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Data Flow</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-gpt-5-mini/data-flow.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Data Storage</h3>
+        <table>
+          <thead><tr><th>Store</th><th>Type</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>Amazon Aurora PostgreSQL</strong></td><td><code>sql</code></td><td>Provides immediate consistency, transactions, and durability for conversation history and billing line-items. Aurora supports multi-AZ, read-replicas, partitioning/sharding, and scales to high throughput with proper schema design.</td></tr><tr><td><strong>Redis (ElastiCache Clustered)</strong></td><td><code>cache</code></td><td>Low-latency data for rate-limiting, session/presence mapping, token-bucket counters, and ephemeral caching of recent conversation context for fast reads.</td></tr><tr><td><strong>Amazon S3</strong></td><td><code>blob</code></td><td>Durable, cost-efficient object storage for user uploaded files and model artifacts. Supports presigned uploads and lifecycle policies; integrates with object-lambda for scanning/transformations.</td></tr><tr><td><strong>Apache Kafka (Amazon MSK)</strong></td><td><code>queue</code></td><td>Durable, high-throughput event stream for message events, billing events, and indexing streams. Enables decoupled asynchronous processing (search indexing, billing aggregation, analytics).</td></tr><tr><td><strong>OpenSearch (Elastic) + Vector DB (Pinecone or Milvus)</strong></td><td><code>search</code></td><td>OpenSearch for keyword/structured search and filters; vector DB for semantic similarity search on embeddings. Scales independently and supports fast retrieval of relevant conversation segments.</td></tr><tr><td><strong>OLAP (BigQuery or Snowflake)</strong></td><td><code>nosql</code></td><td>For cost/billing analytics and historical reporting at scale. Stores aggregated billing/usage records and enables fast analytics for admin dashboards and finance exports.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>API Design</h3>
+        <table>
+          <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody><tr><td><code>POST</code></td><td><code>/api/v1/auth/login</code></td><td>Authenticate user (email/password or OAuth token exchange). Returns access token and refresh token. Initiates session and rate-limit metadata.</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/conversations</code></td><td>List user conversations with pagination, sorting, and filters (by tag, model, shared). Uses read-replica; consistent with write-through caching invalidation.</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/conversations</code></td><td>Create a new conversation; specify model, system prompt, privacy/sharing options, and optional attachments.</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/conversations/{conversationId}/messages</code></td><td>Send a new user message to a conversation. Persists message, triggers inference via LLM Router, and returns inference-id. Supports multimodal references (file IDs).</td></tr><tr><td><code>WS</code></td><td><code>/api/v1/conversations/{conversationId}/stream</code></td><td>WebSocket endpoint for real-time streaming of LLM responses (token-by-token) and message events. Supports client acknowledgements, reconnect/resume semantics, and server pings.</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/files</code></td><td>Request presigned URL for upload or upload metadata. After upload, file is scanned asynchronously; returns file ID for model input.</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/models</code></td><td>List available models with capabilities, estimated cost/token, latency SLAs, and fallback rules.</td></tr><tr><td><code>POST</code></td><td><code>/api/v1/conversations/{conversationId}/share</code></td><td>Create a public, shareable link (read-only) with optional expiry and password protect settings.</td></tr><tr><td><code>GET</code></td><td><code>/api/v1/admin/metrics</code></td><td>Admin-only metrics endpoint aggregated from Prometheus/OLAP for usage, costs, model health, and alerts. Requires admin RBAC.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Scalability Strategy</h3>
+        <p>Multi-region deployment with region-local clusters (API Gateway + EKS + Aurora in each region or read-only replicas cross-region depending on data residency). Horizontal scaling: stateless frontends and LLM Router scale via Kubernetes HPA/KEDA based on CPU/RPS/queue length. WebSocket workers scale horizontally; use managed API Gateway or ALB to handle connection scaling. Redis is scaled as a clustered ElastiCache with sharding; Aurora can be scaled by sharding conversations by tenant or hashing conversationId to different writer clusters for write throughput. Use Kafka (MSK) partitions scaled by throughput and consumer groups for parallel processing. Use autoscaling GPU pools for internal model serving (using Karpenter/Cluster Autoscaler) and spot instances to reduce cost for non-critical capacity. Employ edge caching (CloudFront) for static assets and read-heavy metadata. For search and embeddings, scale vector DB clusters independently. For global throughput, employ traffic steering to nearest region with failover and active-passive or active-active DB strategy where legal/regulatory constraints permit.</p>
+      </div>
+
+      <div class="section">
+        <h3>Trade-offs</h3>
+        
+        <div class="tradeoff">
+          <h4>Use Aurora PostgreSQL (SQL) as primary conversation store versus a NoSQL store</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Strong consistency and transactional integrity meeting immediate-consistency requirement</span></li><li>✓ <span>Familiar SQL tooling for analytics and billing joins</span></li><li>✓ <span>ACID semantics make concurrency around multi-turn context safer</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Higher cost at scale and more complex sharding strategy required for very high write throughput</span></li><li>✗ <span>Scaling writes requires sharding/partitioning; operational complexity compared to unlimited-scaled NoSQL</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Managed API Gateway + managed WebSocket vs self-hosted WebSocket tier</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Reduces operational burden and more predictable scalability to meet 100K+ connections per region</span></li><li>✓ <span>Integrated auth/metrics and DDoS protections</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Potentially higher cost and less low-level customization than self-hosted approach</span></li><li>✗ <span>Proprietary limits and vendor lock-in</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Hybrid LLM Backends (external providers + internal GPU clusters)</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Flexibility: use cheaper internal models for baseline load and external providers for burst or advanced models</span></li><li>✓ <span>Avoids total dependency on third-party providers and gives control over privacy/compliance</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Complexity in routing, capacity planning, and maintaining model infra</span></li><li>✗ <span>Potentially higher ops cost to run GPU clusters</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Kafka (MSK) for events vs serverless queues (Kinesis/Lambda)</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Kafka provides high throughput, ordering guarantees, and complex stream processing needed for billing accuracy</span></li><li>✓ <span>Good for exactly-once or at-least-once semantics required by billing and audit trails</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Operational complexity and higher management overhead vs serverless alternatives</span></li><li>✗ <span>Higher cost at small scale; more moving parts</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Use Redis for rate-limiting and session store</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Extremely low latency and atomic operations (Lua) for precise rate-limiting</span></li><li>✓ <span>Widely adopted pattern and straightforward to implement token-bucket quotas</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Single point of failure risk if not configured in clustered/high-availability mode</span></li><li>✗ <span>Operational overhead to scale and tune eviction/persistence</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Vector DB (Pinecone/Milvus) for semantic search vs using OpenSearch alone</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Vector DB optimized for nearest-neighbor semantic search at scale and supports high-dimensional vectors</span></li><li>✓ <span>Better latency and scalability for similarity queries</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Adds another datastore to maintain and sync embeddings (operational overhead)</span></li><li>✗ <span>Extra cost; integration complexity with indexing pipelines</span></li></ul></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="design-chatgpt-6" class="tab-content">
+      <div class="meta-bar">
+        <span>⏱ 221.0s</span>
+        <span>📅 2/8/2026, 1:59:52 PM</span>
+        <span>📁 design-chatgpt-gpt-5.2</span>
+      </div>
+
+      <div class="section">
+        <h3>Overview</h3>
+        <p class="overview-text">The system is a globally distributed, multi-tenant conversational AI web application supporting authenticated users, multi-turn threads, token-streaming responses, file/multimodal inputs, conversation search, sharing links, and an admin cost/usage dashboard. It is designed for 20M DAU and ~500M messages/day with strict latency requirements (TTFT &lt; 500ms) and high concurrency (&gt;=100K concurrent WebSocket connections per region).
+
+The architecture separates the latency-critical request/streaming path (WebSocket Gateway + Orchestrator + LLM adapters) from durable storage, indexing, analytics, and billing pipelines. Conversations are stored in a strongly consistent SQL store, while search and analytics are powered by specialized systems. LLM backend failures are handled via circuit breakers, hedged requests, and provider failover with per-token streaming preserved.</p>
+      </div>
+
+      <div class="section">
+        <h3>Requirements</h3>
+        <div class="pros-cons">
+          <div>
+            <h4>Functional</h4>
+            <ul><li>User authentication (SSO/email), session management, and tier entitlements</li><li>Create/read/update conversation threads with multi-turn context retention</li><li>Real-time token-by-token streaming of assistant responses to the client</li><li>Model selection per conversation/message across multiple LLM backends</li><li>Conversation history browsing, organization (folders/tags), and search</li><li>File upload (images/documents) and multimodal prompts</li><li>Share conversations via public links with optional redaction/permissions</li><li>Rate limiting and usage quotas per user/tier with enforcement</li><li>Markdown rendering support (code blocks, tables) and safe sanitization</li><li>Admin dashboard for monitoring usage, latency, errors, and costs</li></ul>
+          </div>
+          <div>
+            <h4>Non-Functional</h4>
+            <ul><li>Scale: 20M DAU, 500M messages/day, avg 10 turns/conversation</li><li>Latency: streaming must start within 500ms time-to-first-token</li><li>Concurrency: &gt;=100K concurrent WebSocket connections per region</li><li>Durability + immediate consistency for conversation history</li><li>High availability with automatic failover across LLM providers/regions</li><li>Accurate per-request/per-token cost tracking for billing</li><li>Security: encryption in transit/at rest, least privilege, audit logs</li><li>Compliance readiness (PII controls, retention policies, GDPR delete)</li><li>Operational excellence: observability, alerting, safe deploys (canary)</li><li>Abuse prevention: bot detection, prompt injection/file malware scanning</li></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Architecture Diagram</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-gpt-5.2/architecture.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Components</h3>
+        <table>
+          <thead><tr><th>Component</th><th>Technology</th><th>Responsibility</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>Web Client (Browser) + Mobile</strong></td><td><code>Next.js (React) + TypeScript; Markdown-it + DOMPurify; WebSocket client</code></td><td>UI for chat, conversation list, model selection, file upload, markdown rendering, and real-time streaming display via WebSocket/SSE fallback.</td><td>Next.js supports SSR/SPA, fast iteration, and edge-friendly deployments. Markdown-it is extensible for code blocks/tables; DOMPurify prevents XSS. WebSocket enables low-latency bidirectional streaming.</td></tr><tr><td><strong>Global DNS + CDN/WAF</strong></td><td><code>Cloudflare (DNS, CDN, WAF, Bot Management)</code></td><td>Global traffic steering, TLS termination at edge, DDoS protection, caching of static assets, WAF rules, and bot mitigation.</td><td>Strong global presence reduces latency and protects origin. Bot/DDoS controls are critical at 20M DAU.</td></tr><tr><td><strong>API Gateway / Edge</strong></td><td><code>Envoy Gateway (Kubernetes) + Cloudflare origin rules</code></td><td>Routing for REST APIs and WebSocket upgrades, auth pre-checks, request shaping, and regional failover.</td><td>Envoy provides high-performance L7 routing, retries, timeouts, and observability. Works well with WebSockets and service mesh patterns.</td></tr><tr><td><strong>Auth &amp; Session Service</strong></td><td><code>Auth0 (OIDC) + internal Session API using JWT (short-lived) + Redis for session revocation</code></td><td>User signup/login, OAuth/OIDC, session issuance, refresh, MFA support, and entitlement lookup for tiers.</td><td>Auth0 reduces security risk and time-to-market. Short-lived JWT minimizes DB calls; Redis enables immediate revocation/ban.</td></tr><tr><td><strong>WebSocket Gateway (Streaming Gateway)</strong></td><td><code>Kubernetes-deployed Node.js (uWebSockets.js) or Go (fasthttp + websocket) service; Redis Cluster for ephemeral connection metadata</code></td><td>Manages WebSocket connections, fan-out of token streams, backpressure, connection state, and regional scaling to &gt;=100K concurrent connections.</td><td>Specialized gateway isolates long-lived connections from general API traffic. Go/uws handle high concurrency efficiently; Redis supports lightweight presence/state without coupling to DB.</td></tr><tr><td><strong>Chat Orchestrator Service</strong></td><td><code>Go microservice (gRPC internally) with circuit breakers (hystrix-like) and retries (Envoy + app-level)</code></td><td>Core chat workflow: validate quotas, build context, call LLM backends, stream tokens, handle tool/file references, persist messages atomically, and emit usage/cost events.</td><td>Go offers predictable latency and high throughput. Central orchestration simplifies consistency and billing correctness while keeping streaming path tight.</td></tr><tr><td><strong>LLM Provider Adapter Layer</strong></td><td><code>Internal service/library used by Orchestrator; supports OpenAI-compatible streaming + Bedrock + Anthropic; optional self-hosted vLLM on GPU nodes</code></td><td>Uniform interface for multiple model providers (e.g., OpenAI, Anthropic, AWS Bedrock, self-hosted vLLM), token streaming normalization, automatic failover/hedging, and provider-specific auth.</td><td>Decouples product from provider APIs and enables rapid switching, routing, and fallback strategies to meet availability/latency constraints.</td></tr><tr><td><strong>Conversation Service</strong></td><td><code>Java/Kotlin (Spring Boot) or Go; PostgreSQL-compatible distributed SQL (YugabyteDB)</code></td><td>CRUD for conversations, messages, metadata (title, tags, folders), share settings, and immediate-consistency reads.</td><td>Distributed SQL provides strong consistency with horizontal scaling and multi-region resilience. A dedicated service encapsulates schema and access patterns.</td></tr><tr><td><strong>Search/Indexing Service</strong></td><td><code>Elasticsearch (managed, e.g., Elastic Cloud) + Kafka Connect for indexing pipeline</code></td><td>Index conversation/message text and metadata for fast search, filtering, and ranking; supports near-real-time updates.</td><td>Elasticsearch is well-suited for full-text search and faceting at large scale. Kafka-based ingestion decouples indexing from the write path.</td></tr><tr><td><strong>File Ingestion &amp; Multimodal Pipeline</strong></td><td><code>S3-compatible object storage (Amazon S3) + CloudFront signed URLs; ClamAV scanning; Apache Tika for parsing; optional GPU service for vision embeddings</code></td><td>Handle uploads, virus/malware scanning, document parsing (PDF/DOCX), image preprocessing, OCR, embedding generation, and secure storage/links.</td><td>Object storage is the standard for large binary data. Scanning and parsing protect the platform. Signed URLs reduce origin load and limit unauthorized access.</td></tr><tr><td><strong>Rate Limiting &amp; Quota Service</strong></td><td><code>Redis Cluster (token bucket/leaky bucket) + internal Quota API; optional Envoy global rate limit service</code></td><td>Per-user/per-tier rate limits (RPS), token quotas, daily/monthly usage, and enforcement in the hot path.</td><td>Redis offers sub-millisecond counters suitable for the 500ms TTFT constraint. Central policy keeps enforcement consistent across gateways.</td></tr><tr><td><strong>Usage/Cost Metering Service</strong></td><td><code>Kafka + stream processing (Apache Flink) + ClickHouse for analytics + PostgreSQL ledger tables</code></td><td>Compute accurate costs per request (tokens in/out, model pricing, file processing costs), generate billing-grade ledgers, and expose aggregates to admin/user dashboards.</td><td>Flink enables real-time aggregation while a PostgreSQL ledger ensures correctness and auditability. ClickHouse supports high-QPS analytics for dashboards.</td></tr><tr><td><strong>Sharing Service</strong></td><td><code>Go service + PostgreSQL (YugabyteDB) + CDN caching for public read views</code></td><td>Create public share links, snapshot/redaction, access control, and view tracking.</td><td>Share links require durable mapping and permissions. CDN accelerates read-heavy public access.</td></tr><tr><td><strong>Admin &amp; Observability Stack</strong></td><td><code>Prometheus + Grafana; OpenTelemetry + Tempo/Jaeger; Loki; Sentry; Argo Rollouts for canary</code></td><td>Monitoring, tracing, logging, incident response, and admin dashboard for usage/cost/latency/provider health.</td><td>Standard cloud-native observability with strong ecosystem; canary reduces risk when changing critical streaming paths.</td></tr><tr><td><strong>Message Bus / Event Backbone</strong></td><td><code>Apache Kafka (managed, e.g., Confluent Cloud)</code></td><td>Decouple write path from indexing, analytics, notifications, and offline processing.</td><td>Kafka scales to very high throughput (500M messages/day) and enables replayable event streams for multiple consumers.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Data Flow</h3>
+        <p class="mermaid-warning">⚠ Mermaid rendering can be flaky with LLM-generated diagrams. If the diagram fails, copy the source and paste it into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> for reliable rendering.</p>
+        <div class="mermaid" data-src="design-chatgpt-gpt-5.2/data-flow.mmd"></div>
+      </div>
+
+      <div class="section">
+        <h3>Data Storage</h3>
+        <table>
+          <thead><tr><th>Store</th><th>Type</th><th>Justification</th></tr></thead>
+          <tbody><tr><td><strong>YugabyteDB (PostgreSQL-compatible distributed SQL)</strong></td><td><code>sql</code></td><td>Strong consistency and durability with horizontal scaling and multi-region replication; ideal for immediately consistent conversation history and share-link metadata.</td></tr><tr><td><strong>Redis Cluster</strong></td><td><code>cache</code></td><td>Sub-millisecond counters for rate limiting/quota enforcement; session revocation; ephemeral WebSocket connection metadata.</td></tr><tr><td><strong>Apache Kafka</strong></td><td><code>queue</code></td><td>High-throughput event backbone to decouple indexing, analytics, metering, and async file processing from the latency-critical chat path.</td></tr><tr><td><strong>Amazon S3 (Object Storage)</strong></td><td><code>blob</code></td><td>Durable, scalable storage for user uploads (images/documents) and generated artifacts; integrates with signed URLs and lifecycle policies.</td></tr><tr><td><strong>Elasticsearch</strong></td><td><code>search</code></td><td>Full-text search with faceting for conversation history at scale, supporting near-real-time indexing from Kafka.</td></tr><tr><td><strong>ClickHouse</strong></td><td><code>nosql</code></td><td>High-performance OLAP for admin/user dashboards on usage, costs, latency, and provider performance.</td></tr><tr><td><strong>PostgreSQL (Billing Ledger)</strong></td><td><code>sql</code></td><td>Billing-grade immutable ledger entries require strict constraints, transactions, and auditability; kept separate from high-volume chat OLTP.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>API Design</h3>
+        <table>
+          <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody><tr><td><code>POST</code></td><td><code>/v1/auth/session</code></td><td>Exchange OIDC code for application session (JWT/refresh), return user profile and tier entitlements.</td></tr><tr><td><code>POST</code></td><td><code>/v1/conversations</code></td><td>Create a new conversation (optionally with selected model, system prompt, folder/tags).</td></tr><tr><td><code>GET</code></td><td><code>/v1/conversations/{conversationId}</code></td><td>Fetch conversation metadata and messages with strong consistency (latest turns).</td></tr><tr><td><code>POST</code></td><td><code>/v1/conversations/{conversationId}/messages</code></td><td>Send a user message (non-streaming fallback) and receive the assistant response when complete.</td></tr><tr><td><code>WS</code></td><td><code>/v1/ws/chat</code></td><td>WebSocket endpoint for streaming chat. Client sends message frames; server streams tokens/events (delta tokens, tool/file status, final).</td></tr><tr><td><code>POST</code></td><td><code>/v1/files</code></td><td>Request an upload session; returns signed upload URL(s) and fileId(s).</td></tr><tr><td><code>GET</code></td><td><code>/v1/files/{fileId}</code></td><td>Fetch file metadata and processing status (scanned/parsed/ready).</td></tr><tr><td><code>GET</code></td><td><code>/v1/search</code></td><td>Search conversations/messages by query, filters (date, model, tags), and pagination.</td></tr><tr><td><code>POST</code></td><td><code>/v1/share</code></td><td>Create a public share link for a conversation snapshot with optional redaction rules.</td></tr><tr><td><code>GET</code></td><td><code>/v1/share/{shareId}</code></td><td>Retrieve shared conversation snapshot for public viewing (read-only).</td></tr><tr><td><code>GET</code></td><td><code>/v1/usage</code></td><td>Return current usage, remaining quotas, and recent cost estimates for the authenticated user.</td></tr><tr><td><code>GET</code></td><td><code>/v1/admin/metrics</code></td><td>Admin-only: aggregated metrics (DAU, messages, token volume, costs, provider error rates/latency).</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>Scalability Strategy</h3>
+        <p>Global active-active deployment across multiple regions (at least 3) with GeoDNS steering to nearest healthy region. WebSocket Gateways scale horizontally behind Envoy with connection-aware load balancing; keep services stateless and store only ephemeral connection metadata in Redis. The hot path (quota check, context fetch, LLM streaming) is optimized for TTFT by: (1) precomputing and caching conversation summaries, (2) limiting context window with rolling summarization, (3) parallelizing context fetch and file metadata fetch, and (4) using hedged requests to LLM providers after a short delay when p95 latency rises.
+
+Conversation history writes are strongly consistent using distributed SQL with synchronous replication and tuned transaction boundaries (persist user message immediately; persist assistant message incrementally with periodic checkpoints, then finalize). Kafka decouples indexing/analytics and supports replay. Elasticsearch scales by sharding by tenant/time; ClickHouse scales by distributed tables and partitioning by date/model. Rate limiting uses Redis Cluster with key hashing by userId to spread load; per-tier policies are cached at gateways. For 500M messages/day, partition Kafka topics by conversationId hash, and use consumer groups for Search and Metering pipelines. LLM adapters implement circuit breakers, bulkheads per provider, and region-aware routing; self-hosted vLLM provides a fallback capacity pool for reliability and cost control.</p>
+      </div>
+
+      <div class="section">
+        <h3>Trade-offs</h3>
+        
+        <div class="tradeoff">
+          <h4>Use YugabyteDB (distributed SQL) for conversation history instead of DynamoDB/Cassandra</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Strong consistency and SQL transactions simplify immediate-consistency requirements</span></li><li>✓ <span>Secondary indexes and relational modeling for conversations/messages/shares</span></li><li>✓ <span>Multi-region replication and HA with familiar Postgres ecosystem</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Higher operational complexity and cost than single-region Postgres</span></li><li>✗ <span>Write latency can increase with synchronous multi-region replication</span></li><li>✗ <span>Careful schema/partition design needed to avoid hotspots</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>WebSocket Gateway as a separate tier from REST API services</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Optimized for long-lived connections and high concurrency (100K+ per region)</span></li><li>✓ <span>Isolates streaming workloads from standard API traffic</span></li><li>✓ <span>Simplifies backpressure handling and connection lifecycle management</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Additional component to operate and secure</span></li><li>✗ <span>More complex debugging across gateway-orchestrator boundary</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Redis-based quota enforcement in the hot path</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Very low latency suitable for TTFT &lt; 500ms</span></li><li>✓ <span>Supports token bucket algorithms and tier-based policies</span></li><li>✓ <span>Reduces load on primary databases</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Distributed counters require careful design for correctness (race conditions)</span></li><li>✗ <span>Redis outages can block traffic unless graceful degradation is implemented</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Kafka event-driven pipelines for search indexing and cost analytics</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Decouples latency-critical chat from heavy indexing/analytics</span></li><li>✓ <span>Enables replay, backfills, and multiple consumers</span></li><li>✓ <span>Handles very high throughput (500M messages/day)</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Eventual consistency for search/analytics (not for core conversation reads)</span></li><li>✗ <span>Requires schema governance and exactly-once/at-least-once considerations</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Elasticsearch for conversation search</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Best-in-class full-text search, faceting, and relevance tuning</span></li><li>✓ <span>Scales horizontally via sharding and replicas</span></li><li>✓ <span>Rich query DSL for product features</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Operational overhead: shard sizing, reindexing, cluster tuning</span></li><li>✗ <span>Index lag (seconds) unless aggressively tuned</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>LLM adapter with automatic failover and hedged requests</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Improves availability and tail latency under provider issues</span></li><li>✓ <span>Abstracts provider-specific streaming formats and pricing</span></li><li>✓ <span>Supports routing by cost/performance/tier</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Complexity in maintaining consistent user experience across providers</span></li><li>✗ <span>Risk of duplicate costs with hedged requests if not carefully canceled</span></li><li>✗ <span>Provider output differences can affect response consistency</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>Billing-grade cost ledger in PostgreSQL separate from OLTP conversation store</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Strong auditability and immutability patterns for billing</span></li><li>✓ <span>Protects core conversation store from analytics/billing query load</span></li><li>✓ <span>Simplifies reconciliation and dispute handling</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Data duplication and additional ETL/stream processing</span></li><li>✗ <span>Requires reconciliation logic between provider usage and internal metering</span></li></ul></div>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <h4>S3 + signed URLs for file uploads and downloads</h4>
+          <div class="pros-cons">
+            <div><ul class="pros"><li>✓ <span>Highly scalable and cost-effective for large binary storage</span></li><li>✓ <span>Offloads bandwidth from application services</span></li><li>✓ <span>Supports lifecycle policies and encryption controls</span></li></ul></div>
+            <div><ul class="cons"><li>✗ <span>Requires careful access control to prevent link leakage</span></li><li>✗ <span>Additional pipeline complexity for scanning/parsing and status tracking</span></li></ul></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+function switchTab(btn, problem, idx) {
+  // Deactivate all tabs & content for this problem
+  btn.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  const section = btn.closest('.problem-section');
+  section.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  // Activate selected
+  btn.classList.add('active');
+  document.getElementById(problem + '-' + idx).classList.add('active');
+}
+</script>
+</body>
+</html>

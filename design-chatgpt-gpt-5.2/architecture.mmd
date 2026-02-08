@@ -1,0 +1,53 @@
+flowchart TD
+  U["Users (Web/Mobile)"] --> CDN["Cloudflare (CDN/WAF/DNS)"]
+  CDN --> GW["Envoy Gateway (REST + WS upgrade)"]
+
+  GW --> WS["WebSocket Gateway"]
+  GW --> API["REST APIs (Kubernetes)"]
+
+  API --> AUTH["Auth/Session (Auth0 + Session API)"]
+  API --> CONV["Conversation Service"]
+  API --> SHARE["Sharing Service"]
+  API --> FILE["File Service"]
+  API --> ADMIN["Admin API"]
+
+  WS --> QUOTA["Rate Limit/Quota (Redis Cluster)"]
+  WS --> ORCH["Chat Orchestrator"]
+
+  ORCH --> LLM["LLM Adapter Layer"]
+  LLM --> P1["Provider A (e.g., OpenAI)"]
+  LLM --> P2["Provider B (e.g., Anthropic)"]
+  LLM --> P3["Provider C (AWS Bedrock)"]
+  LLM --> P4["Self-hosted (vLLM on GPU)"]
+
+  CONV --> DB["YugabyteDB (Distributed SQL)"]
+  SHARE --> DB
+  AUTH --> REDIS["Redis (revocation/session cache)"]
+
+  FILE --> OBJ["Object Storage (S3)"]
+  FILE --> SCAN["Malware Scan (ClamAV)"]
+  FILE --> PARSE["Doc Parse/OCR (Tika/OCR)"]
+
+  ORCH --> KAFKA["Kafka"]
+  CONV --> KAFKA
+  FILE --> KAFKA
+
+  KAFKA --> ES["Elasticsearch (Search)"]
+  KAFKA --> FLINK["Flink (stream processing)"]
+  FLINK --> CH["ClickHouse (analytics)"]
+  FLINK --> LEDGER["PostgreSQL Ledger (billing-grade)"]
+
+  subgraph OBS["Observability"]
+    PROM["Prometheus"]
+    GRAF["Grafana"]
+    OTEL["OpenTelemetry Collector"]
+    LOKI["Loki"]
+    TEMPO["Tempo/Jaeger"]
+  end
+
+  WS --> OTEL
+  ORCH --> OTEL
+  API --> OTEL
+  OTEL --> LOKI
+  OTEL --> TEMPO
+  PROM --> GRAF

@@ -1,0 +1,160 @@
+{
+  "title": "Scalable LLM Chat Platform Architecture",
+  "overview": "This system design describes a globally distributed, high-concurrency platform similar to ChatGPT, capable of handling 20M DAU and 500M messages per day. The architecture focuses on low-latency streaming (TTFT < 500ms), immediate consistency for conversation history, and high availability across multiple LLM backends through an intelligent inference orchestration layer. It utilizes an event-driven model for background tasks like cost tracking and search indexing, while maintaining persistent connections for real-time interaction.",
+  "requirements": {
+    "functional": [
+      "User authentication and session management",
+      "Multi-turn conversation with stateful context management",
+      "Real-time token streaming via Server-Sent Events (SSE)",
+      "Global conversation search and organization",
+      "Support for multiple LLM providers (OpenAI, Anthropic, internal models)",
+      "Multimodal support (Image/Document processing)",
+      "Public conversation sharing via UUID-masked URLs",
+      "Admin monitoring for cost and model performance"
+    ],
+    "nonFunctional": [
+      "Scale: 20 million daily active users",
+      "Latency: Time To First Token (TTFT) under 500ms",
+      "Concurrency: 100k+ active connections per region",
+      "Durability: Immediate consistency for conversation storage",
+      "Reliability: Automatic failover between LLM backends",
+      "Scalability: Horizontal scaling for all stateless services"
+    ]
+  },
+  "components": [
+    {
+      "name": "Global Load Balancer",
+      "responsibility": "Routes traffic to the nearest geographic region and handles SSL termination.",
+      "techChoice": "Google Cloud Load Balancing or AWS Global Accelerator",
+      "justification": "Provides low-latency entry points and sophisticated health-checking across global regions."
+    },
+    {
+      "name": "Edge Gateway / API Gateway",
+      "responsibility": "Handles authentication, rate limiting (per-tier), and request routing.",
+      "techChoice": "Kong or Envoy",
+      "justification": "High-performance proxy that supports custom plugins for quota management and JWT validation."
+    },
+    {
+      "name": "Chat & Context Service",
+      "responsibility": "Orchestrates chat logic, manages conversation state, and formats prompts.",
+      "techChoice": "Go (Golang)",
+      "justification": "Golang's concurrency model (goroutines) is ideal for managing thousands of simultaneous streaming connections with low memory overhead."
+    },
+    {
+      "name": "Inference Orchestrator",
+      "responsibility": "Routes requests to LLM backends, handles retries, circuit breaking, and failover.",
+      "techChoice": "Custom microservice (Python/FastAPI or Go)",
+      "justification": "Decouples the chat logic from specific LLM APIs, allowing for dynamic weight shifting and cost optimization."
+    },
+    {
+      "name": "Streaming Engine",
+      "responsibility": "Maintains persistent connections for pushing tokens to the client.",
+      "techChoice": "Server-Sent Events (SSE) over HTTP/2",
+      "justification": "SSE is more efficient than WebSockets for unidirectional streaming from server to client and handles reconnections natively."
+    },
+    {
+      "name": "Usage & Billing Service",
+      "responsibility": "Tracks token consumption and costs per user/request for real-time quota enforcement.",
+      "techChoice": "Apache Flink",
+      "justification": "Required for real-time stream processing of token counts to prevent over-usage beyond quotas."
+    }
+  ],
+  "dataFlow": "sequenceDiagram\n    participant U as User\n    participant G as Gateway\n    participant CS as Chat Service\n    participant DB as Postgres\n    participant IO as Inference Orchestrator\n    participant LLM as LLM Backend\n    U->>G: POST /chat (Prompt + File)\n    G->>CS: Route Request\n    CS->>DB: Fetch Recent History\n    CS->>IO: Request Completion (Context + Prompt)\n    IO->>LLM: Stream Inference\n    LLM-->>IO: Token Stream\n    IO-->>CS: Stream Tokens\n    CS-->>U: SSE Token Stream\n    CS->>DB: Update History (Async)\n    IO->>CS: Final Usage Metrics\n    CS->>G: Log Billing Data",
+  "architectureDiagram": "graph TD\n    User[\"Client Apps (Web/Mobile)\"] --> GSLB[\"Global Load Balancer\"]\n    GSLB --> RegionA[\"Region: US-East\"]\n    GSLB --> RegionB[\"Region: EU-West\"]\n    subgraph \"Regional Cluster\"\n    RegionA --> Gateway[\"API Gateway (Kong)\"]\n    Gateway --> Auth[\"Auth Service (OIDC)\"]\n    Gateway --> ChatSvc[\"Chat Service\"]\n    ChatSvc --> Cache[\"Redis (Session/Context)\"]\n    ChatSvc --> DB[\"Sharded PostgreSQL (History)\"]\n    ChatSvc --> InfOrch[\"Inference Orchestrator\"]\n    InfOrch --> LLM1[\"OpenAI API\"]\n    InfOrch --> LLM2[\"Self-hosted Llama3\"]\n    ChatSvc --> Blob[\"S3 (Files/Images)\"]\n    ChatSvc --> Search[\"Elasticsearch\"]\n    ChatSvc --> Kafka[\"Message Bus (Kafka)\"]\n    Kafka --> Billing[\"Billing Service\"]\n    end",
+  "dataStorage": [
+    {
+      "store": "PostgreSQL (with Citus)",
+      "type": "sql",
+      "justification": "Ensures ACID compliance and immediate consistency for chat history. Citus allows horizontal sharding to handle 500M messages/day."
+    },
+    {
+      "store": "Redis",
+      "type": "cache",
+      "justification": "Used for session management and caching recent conversation context to minimize DB hits during active turns."
+    },
+    {
+      "store": "Elasticsearch",
+      "type": "search",
+      "justification": "Provides full-text search capabilities over millions of conversations with complex filtering (by date, model, or folder)."
+    },
+    {
+      "store": "Amazon S3 / Google Cloud Storage",
+      "type": "blob",
+      "justification": "Durable storage for multimodal inputs (images, PDF documents) and exported chat logs."
+    },
+    {
+      "store": "Apache Kafka",
+      "type": "queue",
+      "justification": "Decouples chat streaming from analytical/billing tasks. Ensures that slow storage or billing updates do not block the user response."
+    }
+  ],
+  "apiDesign": [
+    {
+      "endpoint": "/v1/auth/login",
+      "method": "POST",
+      "description": "Authenticates user and returns a JWT session token."
+    },
+    {
+      "endpoint": "/v1/chat/completions",
+      "method": "POST",
+      "description": "Primary endpoint for sending messages. Supports 'stream: true' for SSE responses."
+    },
+    {
+      "endpoint": "/v1/conversations",
+      "method": "GET",
+      "description": "Retrieves a paginated list of the user's conversation history."
+    },
+    {
+      "endpoint": "/v1/conversations/{id}/share",
+      "method": "POST",
+      "description": "Generates a public, read-only URL for a specific conversation thread."
+    },
+    {
+      "endpoint": "/v1/files/upload",
+      "method": "POST",
+      "description": "Uploads multimodal content; returns a file ID for inclusion in chat completions."
+    },
+    {
+      "endpoint": "/v1/models",
+      "method": "GET",
+      "description": "Lists available LLM backends and their specific capabilities (e.g., vision, long context)."
+    }
+  ],
+  "scalabilityStrategy": "The system scales horizontally at the service level using Kubernetes. The Chat Service and Inference Orchestrator are stateless, allowing auto-scaling based on CPU/Memory and concurrent connection counts. Database scalability is achieved through PostgreSQL sharding on 'user_id' to ensure data locality for a single user's history. Regional data isolation is used to meet 100k connection requirements per region, while a global Redis layer or DB replication handles shared state like public links.",
+  "tradeoffs": [
+    {
+      "decision": "SSE over WebSockets",
+      "pros": [
+        "Lower overhead on the server",
+        "Better support for HTTP/2 multiplexing",
+        "Built-in reconnection logic"
+      ],
+      "cons": [
+        "Unidirectional (server to client) only",
+        "Requires separate REST calls for client-side interruptions"
+      ]
+    },
+    {
+      "decision": "Sharded PostgreSQL for History",
+      "pros": [
+        "Strong consistency for conversation turns",
+        "Relational schema fits organized folders/tags well"
+      ],
+      "cons": [
+        "More complex to manage than NoSQL like DynamoDB",
+        "Requires careful shard key selection to avoid hotspots"
+      ]
+    },
+    {
+      "decision": "Inference Orchestrator Abstraction",
+      "pros": [
+        "Seamless failover between providers",
+        "Centralized cost and rate limit tracking"
+      ],
+      "cons": [
+        "Additional network hop (approx 10-20ms latency)",
+        "Single point of failure if not properly redundant"
+      ]
+    }
+  ]
+}

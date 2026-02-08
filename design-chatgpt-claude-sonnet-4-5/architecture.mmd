@@ -1,0 +1,105 @@
+graph TD
+    Client["Client (Web/Mobile)"]
+    CDN["CloudFront CDN"]
+    GLB["Global Load Balancer (Route53)"]
+    
+    subgraph "Region 1"
+        ALB1["Application Load Balancer"]
+        Kong1["API Gateway (Kong)"]
+        WS1["WebSocket Manager (Go)"]
+        Auth1["Auth Service (Node.js)"]
+        Conv1["Conversation Service (Java)"]
+        LLM1["LLM Gateway (Python)"]
+        File1["File Processing (Python)"]
+        Share1["Share Service (Go)"]
+        RateLimit1["Rate Limiter (Redis+Lua)"]
+    end
+    
+    subgraph "Region 2"
+        ALB2["Application Load Balancer"]
+        Kong2["API Gateway (Kong)"]
+        WS2["WebSocket Manager (Go)"]
+        Auth2["Auth Service (Node.js)"]
+        Conv2["Conversation Service (Java)"]
+        LLM2["LLM Gateway (Python)"]
+    end
+    
+    subgraph "Data Layer"
+        PG_Primary["PostgreSQL Primary (Citus)"]
+        PG_Replica1["PostgreSQL Read Replica 1"]
+        PG_Replica2["PostgreSQL Read Replica 2"]
+        Redis_Cluster["Redis Cluster"]
+        ES["Elasticsearch Cluster"]
+        S3["Amazon S3"]
+        Kafka["Apache Kafka Cluster"]
+        ClickHouse["ClickHouse Cluster"]
+    end
+    
+    subgraph "External Services"
+        OpenAI["OpenAI API"]
+        Anthropic["Anthropic API"]
+        Custom["Custom LLM Endpoints"]
+    end
+    
+    subgraph "Supporting Services"
+        Search["Search Service (ES)"]
+        Analytics["Analytics Service"]
+        Notif["Notification Service"]
+    end
+    
+    Client --> CDN
+    Client --> GLB
+    CDN --> S3
+    GLB --> ALB1
+    GLB --> ALB2
+    
+    ALB1 --> Kong1
+    Kong1 --> WS1
+    Kong1 --> Auth1
+    Kong1 --> Conv1
+    Kong1 --> Share1
+    Kong1 --> File1
+    
+    ALB2 --> Kong2
+    Kong2 --> WS2
+    Kong2 --> Auth2
+    Kong2 --> Conv2
+    Kong2 --> LLM2
+    
+    WS1 --> LLM1
+    Conv1 --> LLM1
+    WS2 --> LLM2
+    Conv2 --> LLM2
+    
+    Auth1 --> Redis_Cluster
+    Auth2 --> Redis_Cluster
+    RateLimit1 --> Redis_Cluster
+    
+    Conv1 --> PG_Primary
+    Conv1 --> PG_Replica1
+    Conv2 --> PG_Primary
+    Conv2 --> PG_Replica2
+    
+    LLM1 --> OpenAI
+    LLM1 --> Anthropic
+    LLM1 --> Custom
+    LLM2 --> OpenAI
+    LLM2 --> Anthropic
+    
+    File1 --> S3
+    Share1 --> Redis_Cluster
+    
+    Conv1 --> Kafka
+    Conv2 --> Kafka
+    LLM1 --> Kafka
+    LLM2 --> Kafka
+    
+    Kafka --> Search
+    Kafka --> Analytics
+    Kafka --> Notif
+    
+    Search --> ES
+    Analytics --> ClickHouse
+    
+    PG_Primary --> PG_Replica1
+    PG_Primary --> PG_Replica2

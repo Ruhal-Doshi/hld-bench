@@ -1,0 +1,43 @@
+graph TD
+    User(("User Client"))
+    CDN["CDN (Cloudfront)"]
+    LB["Load Balancer (ALB)"]
+    
+    subgraph ClusterK8s[""Cluster (K8s)""]
+        GW["API Gateway (Kong)"]
+        Auth["Auth Service"]
+        Chat["Chat Service (Go/WS)"]
+        Context["Context Assembler"]
+        Orch["Model Orchestrator"]
+        Workers["Async Workers"]
+    end
+    
+    subgraph "Data Layer"
+        Redis["Redis Cluster (Hot Context)"]
+        DDB[" (DynamoDB - Chat History) "]
+        S3["S3 (Media/Uploads)"]
+        ES["Elasticsearch (History Search)"]
+        Kafka["Kafka (Event Bus)"]
+    end
+
+    User --> CDN
+    User --> LB
+    LB --> GW
+    GW --> Auth
+    GW --> Chat
+    
+    Chat --> Redis
+    Chat --> Context
+    Context --> Redis
+    Context --> DDB
+    Chat --> Orch
+    
+    Orch --> ExternalLLM["External LLM APIs"]
+    Orch --> SelfHosted["Self-Hosted Models"]
+    
+    Chat -.-> Kafka
+    Kafka --> Workers
+    Workers --> ES
+    Workers --> DDB
+    
+    User -- "Uploads" --> S3

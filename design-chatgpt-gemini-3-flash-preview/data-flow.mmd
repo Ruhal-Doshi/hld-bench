@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant U as User
+    participant G as Gateway
+    participant CS as Chat Service
+    participant DB as Postgres
+    participant IO as Inference Orchestrator
+    participant LLM as LLM Backend
+    U->>G: POST /chat (Prompt + File)
+    G->>CS: Route Request
+    CS->>DB: Fetch Recent History
+    CS->>IO: Request Completion (Context + Prompt)
+    IO->>LLM: Stream Inference
+    LLM-->>IO: Token Stream
+    IO-->>CS: Stream Tokens
+    CS-->>U: SSE Token Stream
+    CS->>DB: Update History (Async)
+    IO->>CS: Final Usage Metrics
+    CS->>G: Log Billing Data

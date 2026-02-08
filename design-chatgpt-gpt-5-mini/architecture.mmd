@@ -1,0 +1,26 @@
+flowchart TD
+    A["User (Web/Mobile)"] --> B["CDN / Edge (CloudFront / WAF)"]
+    B --> C["API Gateway (HTTP + WebSocket)"]
+    C --> D["Auth Service (Cognito/Auth0)"]
+    C --> E["WebSocket Workers (EKS)"]
+    C --> F["Conversation API (EKS)"]
+    E --> G["Redis (ElastiCache) - presence, rate-limit"]
+    F --> H["Aurora PostgreSQL (Conversations/Metadata)"]
+    F --> I["S3 (Files and Attachments)"]
+    F --> J["Kafka (MSK) - events"]
+    J --> K["Search Index (OpenSearch) and Vector DB (Pinecone/Milvus)"]
+    J --> L["Billing Service + OLAP (Snowflake/BigQuery)"]
+    F --> M["LLM Router (EKS)"]
+    M --> N["LLM Backends: External (OpenAI) and Internal GPU Cluster (Triton/Ray)"]
+    M --> J
+    E --> C
+    H -->|replicas| H2["Aurora Read Replicas (for reads)"]
+    subgraph Observability
+      O1["Prometheus + Grafana"]
+      O2["Jaeger Tracing"]
+      O3["OpenSearch / ELK Logs"]
+    end
+    J --> O1
+    J --> L
+    M --> O2
+    C --> O3

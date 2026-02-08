@@ -1,0 +1,37 @@
+sequenceDiagram
+    participant Billing_Service as "Billing Service"
+    participant Search_Service as "Search Service"
+    participant Billing_Analytics as "Billing/Analytics"
+    participant U as "User (Browser/App)"
+    participant CDN as "CDN / Edge"
+    participant API as "API Gateway (REST / WebSocket)"
+    participant Auth as "Auth Service"
+    participant WS as "WebSocket Worker"
+    participant Conv as "Conversation Service"
+    participant Router as "LLM Router"
+    participant LLM as "LLM Backends (internal/external)"
+    participant DB as "Aurora PostgreSQL"
+    participant Redis as "Redis (rate-limit, session)"
+    participant Kafka as "Kafka (MSK)"
+
+    U->>CDN: HTTPS request / WS connect
+    CDN->>API: Route to nearest region
+    API->>Auth: Validate token/session (if REST) or handshake
+    Auth-->>API: Auth OK
+    API->>WS: Route WebSocket connection
+    WS->>Redis: Register connection/presence
+    U->>API: POST /conversations/{id}/messages (or WS send)
+    API->>Conv: Validate + persist message
+    Conv->>DB: Insert message (immediate commit)
+    DB-->>Conv: Commit ack
+    Conv->>Kafka: Emit "message.created" event
+    Conv->>Router: Request streaming inference (include conversation context)
+    Router->>LLM: Send prompt (gRPC/HTTP stream)
+    LLM->>Router: Stream tokens (token-by-token)
+    Router->>Kafka: Emit "inference.usage" events (tokens, model, timestamps)
+    Router->>WS: Stream tokens to client
+    WS->>U: Token frames (client renders live)
+    Router->>Billing_Service: Send cost telemetry (sync/async)
+    Kafka->>Search_Service: Consume events to index text & embeddings
+    Kafka->>Billing_Analytics: Consume events for aggregation
+    Note over U,DB: Conversation stored immediately and available for reads/search

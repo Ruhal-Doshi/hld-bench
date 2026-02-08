@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant U as User Browser
+    participant CF as Edge (Cloudflare)
+    participant GW as API/WS Gateway
+    participant RL as Rate Limit Service
+    participant CS as Conversation Service
+    participant LR as LLM Router
+    participant PV as Provider
+    participant EV as Kafka
+    participant CH as ClickHouse
+    participant OS as OpenSearch
+
+    U->>CF: Connect WebSocket /v1/ws (JWT)
+    CF->>GW: Forward WS (geo-routed)
+    GW->>RL: Check rate limit/quota (user, model)
+    RL-->>GW: Allow with remaining tokens
+    U->>GW: Send user message (text + file refs)
+    GW->>CS: Persist user message (txn)
+    CS-->>GW: Ack message id (immediately consistent)
+    GW->>LR: Start completion (model, prompt, context)
+    LR->>PV: Provider streaming request (HTTP/2)
+    PV-->>LR: Stream tokens
+    LR-->>GW: Stream tokens (backpressure-aware)
+    GW-->>U: Stream tokens to client (TTFT < 500ms)
+    LR->>EV: Emit usage_start (user, model, est context)
+    PV-->>LR: Stream completed (usage: prompt/completion tokens)
+    LR->>GW: Done signal with metadata
+    GW->>CS: Finalize assistant message (content, stats)
+    GW->>EV: Emit usage_final (tokens, latency, provider, cost)
+    EV->>CH: Sink events for analytics/cost
+    EV->>OS: Trigger indexing (async)
+    Note over CS,OS: Indexing is eventually consistent (search), DB is immediately consistent

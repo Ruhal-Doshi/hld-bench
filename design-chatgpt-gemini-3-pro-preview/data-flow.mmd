@@ -1,0 +1,33 @@
+sequenceDiagram
+    participant U as "User Client"
+    participant GW as "API Gateway"
+    participant CS as "Chat Service (Go)"
+    participant DB as "Redis (Cache)"
+    participant MO as "Model Orchestrator"
+    participant LLM as "LLM Provider"
+    participant Q as "Kafka (Billing)"
+
+    U->>GW: "WebSocket Connect (Auth Token)"
+    GW->>CS: "Upgrade Connection"
+    CS-->>U: "Connection Est."
+    
+    U->>CS: "Send Prompt (JSON)"
+    CS->>DB: "Fetch Conversation Context"
+    DB-->>CS: "Return Last k Turns"
+    
+    CS->>MO: "Request Completion (Stream=True)"
+    MO->>LLM: "API Call"
+    
+    loop Stream Chunks
+        LLM-->>MO: "Token Chunk"
+        MO-->>CS: "Token Chunk"
+        CS-->>U: "Token Chunk (WS Frame)"
+    end
+    
+    LLM-->>MO: "[DONE]"
+    MO-->>CS: "Complete Signal + Usage Metadata"
+    
+    par Async Processing
+        CS->>DB: "Write New Message to Cache/DB"
+        CS->>Q: "Publish Usage Event"
+    end

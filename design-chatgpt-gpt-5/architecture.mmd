@@ -1,0 +1,47 @@
+flowchart TD
+    subgraph Edge
+      CF["Cloudflare (CDN/WAF/Geo LB)"]
+    end
+
+    subgraph RegionAActiveActive["Region A (Active-Active)"]
+      ALB["AWS ALB (Ingress)"]
+      GW["API/WS Gateway (Go, Kubernetes)"]
+      RLS["Envoy Rate Limit Service"]
+      REDIS["Redis Cluster (Sessions/Rate/Cache)"]
+      AUTH["Auth0 (OIDC)"]
+      CONV["Conversation Service (Go)"]
+      PG["PostgreSQL Citus (Messages/Conversations)"]
+      SRCH["Search Service (Indexers)"]
+      OS["OpenSearch (FTS + k-NN)"]
+      LLMR["LLM Router (Go)"]
+      PVEXT["Provider APIs ('OpenAI/Anthropic/Azure OpenAI/Vertex')"]
+      VLLM["In-house Inference (vLLM on GPU) - Istio mTLS"]
+      FILES["File Ingestion (S3 + Textract + Tika + Object Lambda)"]
+      S3["Amazon S3 (Blobs)"]
+      MSK["Kafka (AWS MSK)"]
+      COST["Cost/Billing Service"]
+      CH["ClickHouse (Analytics/Costs)"]
+      MON["Prometheus/Grafana/Jaeger/Loki"]
+      ADMIN["Admin Dashboard (Next.js)"]
+    end
+
+    CF --> ALB --> GW
+    GW --> AUTH
+    GW --> RLS
+    RLS --> REDIS
+    GW --> CONV --> PG
+    GW --> LLMR
+    LLMR --> PVEXT
+    LLMR --> VLLM
+    GW --> FILES --> S3
+    CONV --> MSK
+    LLMR --> MSK
+    FILES --> MSK
+    MSK --> COST --> CH
+    MSK --> SRCH --> OS
+    GW --> MON
+    CONV --> MON
+    LLMR --> MON
+    ADMIN --> CH
+    ADMIN --> PG
+    ADMIN --> MON
