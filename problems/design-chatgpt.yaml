@@ -1,0 +1,31 @@
+key: design-chatgpt
+title: "Design a ChatGPT-like Web Application"
+description: |
+  Design a web application similar to ChatGPT that allows users to have
+  multi-turn conversations with large language models.
+
+  The platform should support:
+  - User authentication and session management
+  - Multi-turn conversation threads with context retention
+  - Real-time streaming of LLM responses (token by token)
+  - Conversation history with search and organization
+  - Multiple model selection (different LLM backends)
+  - Rate limiting and usage quotas per user/tier
+  - Markdown rendering in responses (code blocks, tables, etc.)
+  - File upload and multimodal input (images, documents)
+  - Sharing conversations via public links
+  - Admin dashboard for monitoring usage and costs
+
+  Scale target: 20 million daily active users, 500 million messages per day,
+  average conversation length of 10 turns.
+constraints:
+  - Streaming responses must start within 500ms (time to first token)
+  - Must support at least 100K concurrent WebSocket connections per region
+  - Conversation history must be durable and immediately consistent
+  - Must handle LLM backend failures gracefully with automatic failover
+  - Cost tracking per request for billing accuracy
+tags:
+  - web-application
+  - real-time
+  - streaming
+  - llm-infrastructure

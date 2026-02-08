@@ -1,0 +1,42 @@
+{
+  "name": "hld-bench",
+  "version": "0.1.0",
+  "description": "Open-source benchmark evaluating LLMs on high-level system design",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "hld-bench": "dist/index.js"
+  },
+  "scripts": {
+    "bench": "tsx src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "benchmark",
+    "llm",
+    "system-design",
+    "hld",
+    "tanstack-ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "packageManager": "pnpm@10.28.2",
+  "dependencies": {
+    "@tanstack/ai": "^0.3.1",
+    "@tanstack/ai-anthropic": "^0.3.0",
+    "@tanstack/ai-gemini": "^0.3.2",
+    "@tanstack/ai-openai": "^0.3.0",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "dotenv": "^17.2.4",
+    "ora": "^9.3.0",
+    "yaml": "^2.8.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

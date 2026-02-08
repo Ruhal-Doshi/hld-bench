@@ -1,0 +1,72 @@
+# HLD-Bench Model Configuration
+#
+# Define which models to benchmark. Each entry needs:
+#   id:          Unique identifier (used in CLI --model flag and output dirs)
+#   provider:    Built-in: openai, anthropic, gemini
+#                Custom providers fall back to OpenAI-compatible API
+#   model:       Model name passed to the provider API
+#   displayName: Human-readable name for reports
+#   envVar:      (optional) Custom env var for API key
+#                Auto-resolved for built-in providers (OPENAI_API_KEY, etc.)
+#
+
+models:
+  # ── OpenAI Frontier ─────────────────────────────────────────
+  - id: gpt-5.2
+    provider: openai
+    model: gpt-5.2
+    displayName: "GPT-5.2"
+
+  - id: gpt-5-mini
+    provider: openai
+    model: gpt-5-mini
+    displayName: "GPT-5 Mini"
+
+  - id: gpt-5-nano
+    provider: openai
+    model: gpt-5-nano
+    displayName: "GPT-5 Nano"
+
+  - id: gpt-5.2-pro
+    provider: openai
+    model: gpt-5.2-pro
+    displayName: "GPT-5.2 Pro"
+
+  - id: gpt-5
+    provider: openai
+    model: gpt-5
+    displayName: "GPT-5"
+
+  - id: gpt-4.1
+    provider: openai
+    model: gpt-4.1
+    displayName: "GPT-4.1"
+
+  # ── Anthropic ───────────────────────────────────────────────
+  - id: claude-sonnet-4
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    displayName: "Claude Sonnet 4"
+
+  - id: claude-sonnet-4-5
+    provider: anthropic
+    model: claude-sonnet-4-5-20250514
+    displayName: "Claude Sonnet 4.5"
+
+  # ── Google Gemini ───────────────────────────────────────────
+  - id: gemini-2.0-flash
+    provider: gemini
+    model: gemini-2.0-flash
+    displayName: "Gemini 2.0 Flash"
+
+  - id: gemini-2.5-pro
+    provider: gemini
+    model: gemini-2.5-pro
+    displayName: "Gemini 2.5 Pro"
+
+  # ── Custom provider example (uncomment to use) ─────────────
+  # - id: deepseek-v3
+  #   provider: openai          # DeepSeek uses OpenAI-compatible API
+  #   model: deepseek-chat
+  #   displayName: "DeepSeek V3"
+  #   envVar: DEEPSEEK_API_KEY  # Custom env var
