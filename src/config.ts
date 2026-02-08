@@ -42,10 +42,15 @@ export const DEFAULT_MODELS: ModelConfig[] = [
   { id: "gpt-5-mini", provider: "openai", model: "gpt-5-mini", displayName: "GPT-5 Mini" },
   { id: "gpt-4.1", provider: "openai", model: "gpt-4.1", displayName: "GPT-4.1" },
   // Anthropic
+  { id: "claude-opus-4-6", provider: "anthropic", model: "claude-opus-4-6", displayName: "Claude Opus 4.6" },
+  { id: "claude-sonnet-4-5", provider: "anthropic", model: "claude-sonnet-4-5", displayName: "Claude Sonnet 4.5" },
+  { id: "claude-haiku-4-5", provider: "anthropic", model: "claude-haiku-4-5", displayName: "Claude Haiku 4.5" },
   { id: "claude-sonnet-4", provider: "anthropic", model: "claude-sonnet-4-20250514", displayName: "Claude Sonnet 4" },
   // Gemini
-  { id: "gemini-2.0-flash", provider: "gemini", model: "gemini-2.0-flash", displayName: "Gemini 2.0 Flash" },
+  { id: "gemini-3-pro-preview", provider: "gemini", model: "gemini-3-pro-preview", displayName: "Gemini 3 Pro Preview" },
+  { id: "gemini-3-flash-preview", provider: "gemini", model: "gemini-3-flash-preview", displayName: "Gemini 3 Flash Preview" },
   { id: "gemini-2.5-pro", provider: "gemini", model: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro" },
+  { id: "gemini-2.0-flash", provider: "gemini", model: "gemini-2.0-flash", displayName: "Gemini 2.0 Flash" },
 ];
 
 // ─── Models Config File Loading ──────────────────────────────────────────────

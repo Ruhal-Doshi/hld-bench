@@ -112,11 +112,11 @@ models:
 
 ### Default Models
 
-| Provider  | Models                                                                   |
-| --------- | ------------------------------------------------------------------------ |
-| OpenAI    | `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5.2-pro`, `gpt-5`, `gpt-4.1` |
-| Anthropic | `claude-sonnet-4`, `claude-sonnet-4-5`                                   |
-| Gemini    | `gemini-2.0-flash`, `gemini-2.5-pro`                                     |
+| Provider  | Models                                                                                 |
+| --------- | -------------------------------------------------------------------------------------- |
+| OpenAI    | `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5.2-pro`, `gpt-5`, `gpt-4.1`               |
+| Anthropic | `claude-opus-4-6`, `claude-sonnet-4-5`, `claude-haiku-4-5`, `claude-sonnet-4`          |
+| Gemini    | `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.0-flash` |
 
 ## Output Structure
 
