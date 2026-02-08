@@ -18,7 +18,7 @@ Results are saved per model and compared side-by-side in an HTML report.
 
 ```bash
 # 1. Clone & install
-git clone https://github.com/<you>/hld-bench && cd hld-bench
+git clone https://github.com/Ruhal-Doshi/hld-bench && cd hld-bench
 pnpm install
 
 # 2. Add API keys
