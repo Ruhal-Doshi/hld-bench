@@ -4,6 +4,8 @@ An open-source benchmark that evaluates LLMs on their ability to produce **high-
 
 Powered by [TanStack AI](https://tanstack.com/ai) (alpha).
 
+> **Live Results:** 7 models have already been benchmarked against the _"Design ChatGPT"_ problem — [view the report here](https://ruhal-doshi.github.io/hld-bench/report.html).
+
 ## What It Does
 
 Given a system design problem (e.g. _"Design ChatGPT"_, _"Design Uber"_), each LLM produces:
