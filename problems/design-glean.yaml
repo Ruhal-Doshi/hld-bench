@@ -1,0 +1,68 @@
+version: 1
+key: design-enterprise-rag
+title: "Design a Real-time Enterprise RAG Knowledge Engine"
+description: |
+  Design a search and retrieval engine that ingests data from multiple SaaS sources
+  (Google Drive, Slack, Jira, Notion, Confluence, GitHub, Salesforce) and powers
+  LLM-generated answers with strict permissioning — similar to Glean.
+
+  The platform should support:
+  - Real-time indexing (document updates reflected in < 1 minute)
+  - Hybrid search (Keyword BM25 + Vector Semantic Search + learned re-ranking)
+  - Document-level and fragment-level Access Control Lists (ACLs) mirrored from source systems
+  - Citation tracking (linking every answer sentence back to its source fragment)
+  - Multi-tenant architecture with strict data isolation (no cross-tenant data leakage)
+  - Handling diverse data formats (PDF, HTML, DOCX, code, chat logs, spreadsheets, images with OCR)
+  - Connector framework: pluggable adapters for each SaaS source with incremental sync
+  - Chunking pipeline: intelligent document splitting (respecting headings, tables, code blocks)
+  - Query understanding: intent detection, entity extraction, query rewriting for better recall
+  - Personalization: rank results higher based on user's team, role, and interaction history
+  - Admin console: per-tenant analytics, connector health, index coverage dashboards
+  - Feedback loop: thumbs-up/down on answers to fine-tune re-ranking and retrieval quality
+
+  Scale target: 5,000 enterprise customers, 1PB of indexed text, 50K queries/sec peak,
+  average 200 documents per query fan-out, p99 end-to-end answer latency < 3 seconds.
+constraints:
+  - Search latency (retrieval only) must be < 100ms at p99
+  - Users must NEVER see content they lack permission to view in the source system
+  - ACL changes in source systems must propagate within 5 minutes
+  - Indexing throughput must handle bursty initial syncs (10M+ docs) without degrading query performance
+  - Vector storage must be cost-efficient with hot/warm/cold tiering
+  - System must remain available during re-indexing and schema migrations (zero-downtime deployments)
+  - Must support regulatory compliance (SOC 2, GDPR data residency, right-to-deletion)
+tags:
+  - vector-database
+  - data-ingestion
+  - security
+  - distributed-systems
+  - search
+  - rag
+  - multi-tenancy
+scoringParameters:
+  - name: "ACL & Security Design"
+    description: "How well does the design enforce document-level and fragment-level permissions? Does it handle ACL sync, propagation delays, and edge cases (shared links, group nesting)?"
+    weight: 20
+  - name: "Search Architecture"
+    description: "Quality of hybrid search design (BM25 + vector + re-ranking). Does it address query understanding, personalization, and relevance feedback?"
+    weight: 15
+  - name: "Connector & Ingestion Pipeline"
+    description: "How robust is the connector framework? Does it handle incremental sync, rate limits, schema changes, and diverse document formats?"
+    weight: 15
+  - name: "Chunking & Embedding Strategy"
+    description: "Does the design address intelligent chunking (respecting structure), embedding model choice, and chunk overlap/size tradeoffs?"
+    weight: 10
+  - name: "Scalability & Performance"
+    description: "Can the system handle 1PB of data, 50K QPS, and bursty ingestion? Are sharding, caching, and tiering strategies well thought out?"
+    weight: 15
+  - name: "Multi-Tenancy & Data Isolation"
+    description: "How is tenant isolation enforced? Does the design prevent cross-tenant data leakage at the storage, index, and query layers?"
+    weight: 10
+  - name: "Diagram Quality"
+    description: "Are the architecture and data-flow diagrams clear, accurate, and detailed enough to understand the system at a glance?"
+    weight: 5
+  - name: "Trade-off Analysis"
+    description: "Does the design explicitly discuss trade-offs (consistency vs latency, cost vs freshness, accuracy vs speed) with clear reasoning?"
+    weight: 5
+  - name: "API Design"
+    description: "Are the APIs well-structured, RESTful/consistent, and do they cover the key operations (search, ingest, admin, feedback)?"
+    weight: 5

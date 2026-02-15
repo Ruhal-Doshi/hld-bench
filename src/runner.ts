@@ -6,7 +6,7 @@ import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
 import { writeRunResult } from "./output/writer.js";
 import { createTimer } from "./utils/timer.js";
 import { log } from "./utils/logger.js";
-import { HLDOutputSchema } from "./types.js";
+import { HLDOutputSchema, META_VERSION } from "./types.js";
 import type { ModelConfig, Problem, RunResult, HLDOutput } from "./types.js";
 
 const MAX_RETRIES = 2;
@@ -71,6 +71,7 @@ async function runSingle(
 
     return {
       meta: {
+        version: META_VERSION,
         problem: problem.key,
         model: modelConfig.id,
         provider: modelConfig.provider,
@@ -118,6 +119,7 @@ async function runSingle(
       if (data) {
         return {
           meta: {
+            version: META_VERSION,
             problem: problem.key,
             model: modelConfig.id,
             provider: modelConfig.provider,

@@ -28,6 +28,7 @@ function loadRuns(outputDir: string): RunData[] {
 
     try {
       const meta: RunMeta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+      meta.version ??= 1; // backward compat for runs generated before v1.2
       const output: HLDOutput = JSON.parse(fs.readFileSync(rawPath, "utf-8"));
       runs.push({ meta, output, dirName: dir.name });
     } catch {

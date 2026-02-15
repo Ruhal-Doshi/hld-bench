@@ -2,7 +2,26 @@ import { z } from "zod";
 
 // ─── Problem Definition ───────────────────────────────────────────────────────
 
+export const ScoringParameterSchema = z.object({
+  name: z.string().describe("Short name for the scoring dimension"),
+  description: z
+    .string()
+    .describe("What voters should evaluate for this parameter"),
+  weight: z
+    .number()
+    .min(1)
+    .max(100)
+    .describe("Relative weight (all weights should sum to 100)"),
+});
+
 export const ProblemSchema = z.object({
+  version: z
+    .number()
+    .int()
+    .min(1)
+    .describe(
+      "Schema version of this problem file. Bump when fields change so consumers can detect format.",
+    ),
   key: z
     .string()
     .describe("Unique identifier for the problem, e.g. 'design-uber'"),
@@ -13,6 +32,12 @@ export const ProblemSchema = z.object({
     .optional()
     .describe("Specific constraints or requirements"),
   tags: z.array(z.string()).optional().describe("Categorization tags"),
+  scoringParameters: z
+    .array(ScoringParameterSchema)
+    .optional()
+    .describe(
+      "Dimensions on which the public can score/vote on each solution. Weights should sum to 100.",
+    ),
 });
 
 export type Problem = z.infer<typeof ProblemSchema>;
@@ -101,14 +126,20 @@ export type BuiltinProvider = (typeof BUILTIN_PROVIDERS)[number];
 export type Provider = string;
 
 export const ModelConfigSchema = z.object({
-  id: z.string().describe("Unique model identifier used in CLI, e.g. 'gpt-5.2'"),
-  provider: z.string().describe("Provider name: openai, anthropic, gemini, or custom"),
+  id: z
+    .string()
+    .describe("Unique model identifier used in CLI, e.g. 'gpt-5.2'"),
+  provider: z
+    .string()
+    .describe("Provider name: openai, anthropic, gemini, or custom"),
   model: z.string().describe("Model name to pass to the provider API"),
   displayName: z.string().describe("Human-readable display name"),
   envVar: z
     .string()
     .optional()
-    .describe("Custom env var name for API key (auto-resolved for built-in providers)"),
+    .describe(
+      "Custom env var name for API key (auto-resolved for built-in providers)",
+    ),
 });
 
 export const ModelsFileSchema = z.object({
@@ -126,6 +157,7 @@ export interface ModelConfig {
 // ─── Run Metadata ────────────────────────────────────────────────────────────
 
 export interface RunMeta {
+  version: number;
   problem: string;
   model: string;
   provider: Provider;
@@ -134,6 +166,12 @@ export interface RunMeta {
 }
 
 // ─── Run Result ──────────────────────────────────────────────────────────────
+
+/** Current meta.json schema version */
+export const META_VERSION = 1;
+
+/** Current raw-response.json schema version */
+export const OUTPUT_VERSION = 1;
 
 export interface RunResult {
   meta: RunMeta;
