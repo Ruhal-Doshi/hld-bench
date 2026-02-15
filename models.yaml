@@ -90,3 +90,24 @@ models:
   #   model: deepseek-chat
   #   displayName: "DeepSeek V3"
   #   envVar: DEEPSEEK_API_KEY  # Custom env var
+
+  # ── OpenRouter (open-source & frontier models) ─────────────
+  - id: minimax-m2.5
+    provider: openrouter
+    model: minimax/minimax-m2.5
+    displayName: "MiniMax M2.5"
+
+  - id: glm-5
+    provider: openrouter
+    model: z-ai/glm-5
+    displayName: "GLM-5"
+
+  - id: qwen3-max-thinking
+    provider: openrouter
+    model: qwen/qwen3-max-thinking
+    displayName: "Qwen3 Max Thinking"
+
+  - id: kimi-k2.5
+    provider: openrouter
+    model: moonshotai/kimi-k2.5
+    displayName: "Kimi K2.5"

@@ -81,18 +81,31 @@ async function runSingle(
       output,
     };
   } catch (firstErr) {
-    // If it's not a validation error, don't retry
     const errMsg =
       firstErr instanceof Error ? firstErr.message : String(firstErr);
-    if (
-      !errMsg.includes("Validation failed") &&
-      !errMsg.includes("Invalid input")
+
+    // If the provider doesn't support tool_choice / structured output,
+    // fall through to raw JSON mode gracefully
+    const isToolChoiceError =
+      errMsg.includes("tool_choice") ||
+      errMsg.includes("tool_use") ||
+      errMsg.includes("structured output") ||
+      (errMsg.includes("404") && errMsg.includes("endpoints"));
+
+    if (isToolChoiceError) {
+      onStatus?.(
+        "model does not support tool_choice, falling back to raw JSON mode...",
+      );
+    } else if (
+      errMsg.includes("Validation failed") ||
+      errMsg.includes("Invalid input")
     ) {
+      onStatus?.(
+        `schema validation failed, retrying with error feedback (1/${MAX_RETRIES})...`,
+      );
+    } else {
       throw firstErr;
     }
-    onStatus?.(
-      `schema validation failed, retrying with error feedback (1/${MAX_RETRIES})...`,
-    );
   }
 
   // Retry loop: ask for raw JSON and validate manually, feeding errors back

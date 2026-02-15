@@ -9,17 +9,20 @@ importers:
   .:
     dependencies:
       '@tanstack/ai':
-        specifier: ^0.3.1
-        version: 0.3.1
+        specifier: ^0.5.0
+        version: 0.5.0
       '@tanstack/ai-anthropic':
-        specifier: ^0.3.0
-        version: 0.3.0(@tanstack/ai@0.3.1)(zod@4.3.6)
+        specifier: ^0.5.0
+        version: 0.5.0(@tanstack/ai@0.5.0)(zod@4.3.6)
       '@tanstack/ai-gemini':
-        specifier: ^0.3.2
-        version: 0.3.2(@tanstack/ai@0.3.1)
+        specifier: ^0.5.0
+        version: 0.5.0(@tanstack/ai@0.5.0)
       '@tanstack/ai-openai':
-        specifier: ^0.3.0
-        version: 0.3.0(@tanstack/ai@0.3.1)(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.5.0
+        version: 0.5.0(@tanstack/ai@0.5.0)(ws@8.19.0)(zod@4.3.6)
+      '@tanstack/ai-openrouter':
+        specifier: ^0.5.0
+        version: 0.5.0(@tanstack/ai@0.5.0)
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -233,6 +236,9 @@ packages:
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
     engines: {node: '>=12'}
 
+  '@openrouter/sdk@0.3.15':
+    resolution: {integrity: sha512-tmiMQGu6L1fHD9NpIABN9LALEZitqM27CFebSVyJTQDcxCcR3m1F6v1O1MnOlLmedCFU+/BojniRGFAXo1F3Bw==}
+
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
@@ -267,25 +273,30 @@ packages:
   '@protobufjs/utf8@1.1.0':
     resolution: {integrity: sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==}
 
-  '@tanstack/ai-anthropic@0.3.0':
-    resolution: {integrity: sha512-BjcaB0oH/C7uzrW9MGcpXudbOozLsuJP12AIhbypd2s/hFX+hBnHSg1TgE+JiC1dpDNgde044pnGVnVEfWADHA==}
+  '@tanstack/ai-anthropic@0.5.0':
+    resolution: {integrity: sha512-PiQx4Kpw+NNjXvVhes29LoO/IvD8M9GGQsNvtLCd+dDhZt3FzdNwHWMZBCpaQWPW142iuhowagh79X//onNjDw==}
     peerDependencies:
-      '@tanstack/ai': ^0.3.0
+      '@tanstack/ai': ^0.5.0
       zod: ^4.0.0
 
-  '@tanstack/ai-gemini@0.3.2':
-    resolution: {integrity: sha512-5s4lcmGJAb8G7lKGxkn/8soDLn/+Ao5IEh+2ADmd9PTuyOrwgdAus5n3I672GYW4EI/i2eXcMuTxe50DGAsVnw==}
+  '@tanstack/ai-gemini@0.5.0':
+    resolution: {integrity: sha512-gunJgwRG+38fbYSE83/XJMHFy/7hDN4Fb91vAAZLK3nh4DoN0ReVbRB4BK9cY9iVYQqGq2PA8d5ruDgfcKO2hQ==}
     peerDependencies:
-      '@tanstack/ai': ^0.2.2
+      '@tanstack/ai': ^0.5.0
 
-  '@tanstack/ai-openai@0.3.0':
-    resolution: {integrity: sha512-ZaMYUiU97LLDhJFbCQgtTVzCitMQSXFe4j1WGsXrz5fPe9ZUqYzMFSJRozONluM+vuI6z02XF2PJPzQldGKbMQ==}
+  '@tanstack/ai-openai@0.5.0':
+    resolution: {integrity: sha512-0xJg+BkqVgIRbl4LyiPQWCLOapfGpK4lSzqjaWRkz2Hf1C3m4exg76rBuv1mvr4G3XAR5SnMRSj3XxlWMuRImA==}
     peerDependencies:
-      '@tanstack/ai': ^0.2.2
+      '@tanstack/ai': ^0.5.0
       zod: ^4.0.0
 
-  '@tanstack/ai@0.3.1':
-    resolution: {integrity: sha512-dGF0IjRMYk2dm6MbSzmLvX8Bbd9nFdMot+XX+BCkJIc7fKFXBsfZSJPj1B4S4P2SQiAco53aqtbr0PWO+M2zIA==}
+  '@tanstack/ai-openrouter@0.5.0':
+    resolution: {integrity: sha512-pHTFPjzyyahaxOPnpxNPHApZamNha4lXV3KaM6Lfa/1fQAB1fhvnvik5IT1RRvvHkiTg3QagbEriZb6S/Vf7lg==}
+    peerDependencies:
+      '@tanstack/ai': 0.5.0
+
+  '@tanstack/ai@0.5.0':
+    resolution: {integrity: sha512-RGTLobq2jFCddLINGsETAsVixIvZTfWVJFBkz+l5JaYaGp0uQkJBDhC375ru0LWH7WsE3BWIUeU1p9QQ0zBGzA==}
     engines: {node: '>=18'}
 
   '@tanstack/devtools-event-client@0.4.0':
@@ -764,6 +775,10 @@ snapshots:
       wrap-ansi: 8.1.0
       wrap-ansi-cjs: wrap-ansi@7.0.0
 
+  '@openrouter/sdk@0.3.15':
+    dependencies:
+      zod: 4.3.6
+
   '@pkgjs/parseargs@0.11.0':
     optional: true
 
@@ -790,31 +805,36 @@ snapshots:
 
   '@protobufjs/utf8@1.1.0': {}
 
-  '@tanstack/ai-anthropic@0.3.0(@tanstack/ai@0.3.1)(zod@4.3.6)':
+  '@tanstack/ai-anthropic@0.5.0(@tanstack/ai@0.5.0)(zod@4.3.6)':
     dependencies:
       '@anthropic-ai/sdk': 0.71.2(zod@4.3.6)
-      '@tanstack/ai': 0.3.1
+      '@tanstack/ai': 0.5.0
       zod: 4.3.6
 
-  '@tanstack/ai-gemini@0.3.2(@tanstack/ai@0.3.1)':
+  '@tanstack/ai-gemini@0.5.0(@tanstack/ai@0.5.0)':
     dependencies:
       '@google/genai': 1.40.0
-      '@tanstack/ai': 0.3.1
+      '@tanstack/ai': 0.5.0
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
       - supports-color
       - utf-8-validate
 
-  '@tanstack/ai-openai@0.3.0(@tanstack/ai@0.3.1)(ws@8.19.0)(zod@4.3.6)':
+  '@tanstack/ai-openai@0.5.0(@tanstack/ai@0.5.0)(ws@8.19.0)(zod@4.3.6)':
     dependencies:
-      '@tanstack/ai': 0.3.1
+      '@tanstack/ai': 0.5.0
       openai: 6.18.0(ws@8.19.0)(zod@4.3.6)
       zod: 4.3.6
     transitivePeerDependencies:
       - ws
 
-  '@tanstack/ai@0.3.1':
+  '@tanstack/ai-openrouter@0.5.0(@tanstack/ai@0.5.0)':
+    dependencies:
+      '@openrouter/sdk': 0.3.15
+      '@tanstack/ai': 0.5.0
+
+  '@tanstack/ai@0.5.0':
     dependencies:
       '@tanstack/devtools-event-client': 0.4.0
       partial-json: 0.1.7

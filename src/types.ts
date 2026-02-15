@@ -119,7 +119,12 @@ export type HLDOutput = z.infer<typeof HLDOutputSchema>;
 
 // ─── Model Configuration ─────────────────────────────────────────────────────
 
-export const BUILTIN_PROVIDERS = ["openai", "anthropic", "gemini"] as const;
+export const BUILTIN_PROVIDERS = [
+  "openai",
+  "anthropic",
+  "gemini",
+  "openrouter",
+] as const;
 export type BuiltinProvider = (typeof BUILTIN_PROVIDERS)[number];
 
 /** Provider can be a built-in or any custom string (for OpenRouter, Ollama, etc.) */
